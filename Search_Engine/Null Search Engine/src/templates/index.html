@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Null Search Engine</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* Reset and Base Styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            min-height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        /* Light Theme Variables */
+        .light-theme {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --secondary-text: #666666;
+            --primary-color: #4285f4;
+            --primary-hover: #3367d6;
+            --secondary-bg: #f5f5f5;
+            --border-color: #e0e0e0;
+            --hover-color: #f0f0f0;
+            --input-bg: #e2e2e2;
+            --panel-bg: #ffffff;
+            --icon-color: #666666;
+            --placeholder-color: #999999;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+        }
+
+        /* Dark Theme Variables */
+        .dark-theme {
+            --bg-color: #202124;
+            --text-color: #e8eaed;
+            --secondary-text: #9aa0a6;
+            --primary-color: #8ab4f8;
+            --primary-hover: #aecbfa;
+            --secondary-bg: #303134;
+            --border-color: #5f6368;
+            --hover-color: #3c4043;
+            --input-bg: #303134;
+            --panel-bg: #303134;
+            --icon-color: #9aa0a6;
+            --placeholder-color: #9aa0a6;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+        }
+
+        /* System Theme Detection */
+        @media (prefers-color-scheme: dark) {
+            body:not(.light-theme):not(.dark-theme) {
+                --bg-color: #202124;
+                --text-color: #e8eaed;
+                --secondary-text: #9aa0a6;
+                --primary-color: #8ab4f8;
+                --primary-hover: #aecbfa;
+                --secondary-bg: #303134;
+                --border-color: #5f6368;
+                --hover-color: #3c4043;
+                --input-bg: #303134;
+                --panel-bg: #303134;
+                --icon-color: #9aa0a6;
+                --placeholder-color: #9aa0a6;
+                --shadow-color: rgba(0, 0, 0, 0.3);
+            }
+        }
+
+        /* Theme Transition */
+        body {
+            transition: background-color 0.3s ease,
+                color 0.3s ease,
+                border-color 0.3s ease;
+        }
+
+        /* Additional Dark Theme Specific Styles */
+        .dark-theme .search-input-container {
+            background-color: var(--input-bg);
+        }
+
+        .dark-theme .search-input-container:focus-within {
+            box-shadow: 0 0 0 2px var(--primary-color);
+        }
+
+        .dark-theme .filter-button {
+            border-color: var(--border-color);
+        }
+
+        .dark-theme .filter-button:hover {
+            background-color: var(--hover-color);
+        }
+
+        .dark-theme .tab-button {
+            color: var(--text-color);
+        }
+
+        .dark-theme .tab-button:hover {
+            color: var(--primary-color);
+        }
+
+        .dark-theme .settings-panel {
+            background-color: var(--panel-bg);
+            border-left-color: var(--border-color);
+        }
+
+        .dark-theme .theme-option {
+            border-color: var(--border-color);
+            color: var(--text-color);
+        }
+
+        .dark-theme .theme-option:hover {
+            background-color: var(--hover-color);
+        }
+
+        .dark-theme .setting-option label {
+            color: var(--text-color);
+        }
+
+        .dark-theme .setting-option input[type="checkbox"] {
+            accent-color: var(--primary-color);
+        }
+
+        /* High Contrast Theme */
+        .high-contrast-theme {
+            --bg-color: #000000;
+            --text-color: #ffffff;
+            --secondary-text: #cccccc;
+            --primary-color: #ffff00;
+            --primary-hover: #ffff33;
+            --secondary-bg: #333333;
+            --border-color: #ffffff;
+            --hover-color: #444444;
+            --input-bg: #000000;
+            --panel-bg: #000000;
+            --icon-color: #ffffff;
+            --placeholder-color: #cccccc;
+            --shadow-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Reduced Motion Theme */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header Styles */
+        header {
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-left,
+        .nav-right {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .icon-button {
+            background: none;
+            border: none;
+            color: var(--icon-color);
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 50%;
+            transition: background-color 0.3s;
+        }
+
+        .icon-button:hover {
+            background-color: var(--hover-color);
+        }
+
+        /* Main Search Area */
+        main {
+            padding: 2rem 0;
+        }
+
+        .search-container {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo h1 {
+            font-size: 3rem;
+            margin-bottom: 2rem;
+            color: var(--primary-color);
+        }
+
+        .search-box {
+            max-width: 600px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .search-input-container {
+            display: flex;
+            align-items: center;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 30px;
+            padding: 0.5rem 1rem;
+            transition: box-shadow 0.3s;
+            position: relative;
+        }
+
+        .search-input-container:focus-within {
+            box-shadow: 0 0 0 2px var(--primary-color);
+        }
+
+        .search-icon {
+            color: var(--icon-color);
+            margin-right: 1rem;
+        }
+
+        #search-input {
+            flex: 1;
+            border: none;
+            background: none;
+            font-size: 1rem;
+            color: var(--text-color);
+            outline: none;
+        }
+
+        #search_button {
+            margin: 0;
+            height: 100%;
+            width: 80px;
+            padding: auto auto;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 0 50px 50px 0;
+            cursor: pointer;
+            position: absolute;
+            top: 0;
+            right: 0;
+        }
+
+        button:hover {
+            background-color: #3295ff9f;
+        }
+
+        #search-input::placeholder {
+            color: var(--placeholder-color);
+        }
+
+        /* Search Filters */
+        .search-filters {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .filter-button {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            background: none;
+            color: var(--text-color);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .filter-button.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        /* Results Area */
+        .results-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .results-count {
+            color: var(--secondary-text);
+        }
+
+        /* Advanced Search Panel */
+        .advanced-search-panel {
+            display: none;
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .advanced-search-panel.active {
+            display: block;
+        }
+
+        .search-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .option-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .option-group label {
+            font-size: 0.9rem;
+            color: var(--secondary-text);
+        }
+
+        .option-group select,
+        .option-group input {
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+        }
+
+        .advanced-search-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        /* Results Tabs */
+        .results-tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .tab-button {
+            padding: 0.5rem 1rem;
+            border: none;
+            background: none;
+            color: var(--text-color);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .tab-button.active {
+            color: var(--primary-color);
+        }
+
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: -0.5rem;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: var(--primary-color);
+        }
+
+        /* Results Content */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 3rem;
+            color: var(--secondary-text);
+        }
+
+        .no-results i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Settings Panel */
+        .settings-panel {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 300px;
+            background-color: var(--panel-bg);
+            border-left: 1px solid var(--border-color);
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .settings-panel.active {
+            display: block;
+        }
+
+        .settings-content h2 {
+            margin-bottom: 2rem;
+        }
+
+        .settings-section {
+            margin-bottom: 2rem;
+        }
+
+        .settings-section h3 {
+            margin-bottom: 1rem;
+        }
+
+        .theme-options {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .theme-option {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: none;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+
+        .theme-option.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .setting-option {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Buttons */
+        .primary-button {
+            padding: 0.5rem 1rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .primary-button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .secondary-button {
+            padding: 0.5rem 1rem;
+            background-color: var(--secondary-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .secondary-button:hover {
+            background-color: var(--hover-color);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .search-container {
+                padding: 1rem;
+            }
+
+            .logo h1 {
+                font-size: 2rem;
+            }
+
+            .search-filters {
+                flex-wrap: wrap;
+            }
+
+            .search-options {
+                grid-template-columns: 1fr;
+            }
+
+            .settings-panel {
+                width: 100%;
+            }
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+    </style>
+    <link rel="stylesheet" href="css/themes.css">
+</head>
+
+<body class="light-theme">
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <nav>
+                <div class="nav-left">
+                    <button id="theme-toggle" class="icon-button">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <button id="settings-toggle" class="icon-button">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+                <div class="nav-right">
+                    <button id="history-toggle" class="icon-button">
+                        <i class="fas fa-history"></i>
+                    </button>
+                    <button id="bookmarks-toggle" class="icon-button">
+                        <i class="fas fa-bookmark"></i>
+                    </button>
+                </div>
+            </nav>
+        </header>
+
+        <!-- Main Search Area -->
+        <main>
+            <div class="search-container">
+                <div class="logo">
+                    <h1>Null Search</h1>
+                </div>
+                <div class="search-box">
+                    <div class="search-input-container">
+                        <i class="fas fa-search search-icon"></i>
+                        <form action="/search" method="get" id="search-form">
+                            <input type="text" id="search-input" name="q" placeholder="Search here..." autocomplete="off" required>
+
+                            <button id="search_button" type="submit">Search</button>
+                        </form>
+                    </div>
+                    <div class="search-suggestions" id="search-suggestions"></div>
+                </div>
+                <div class="search-filters">
+                    <button class="filter-button active" data-filter="all">All</button>
+                    <button class="filter-button" data-filter="text">Text</button>
+                    <button class="filter-button" data-filter="images">Images</button>
+                    <button class="filter-button" data-filter="videos">Videos</button>
+                    <button class="filter-button" data-filter="files">Files</button>
+                </div>
+            </div>
+
+            <!-- Results Area -->
+            <div class="results-container">
+                <div class="results-header">
+                    <div class="results-count">No results found</div>
+                    <div class="advanced-search">
+                        <button id="advanced-search-toggle" class="icon-button">
+                            <i class="fas fa-sliders-h"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Advanced Search Panel -->
+                <div class="advanced-search-panel" id="advanced-search-panel">
+                    <div class="advanced-search-content">
+                        <div class="search-options">
+                            <div class="option-group">
+                                <label>Date Range</label>
+                                <select id="date-range">
+                                    <option value="any">Any time</option>
+                                    <option value="day">Past 24 hours</option>
+                                    <option value="week">Past week</option>
+                                    <option value="month">Past month</option>
+                                    <option value="year">Past year</option>
+                                </select>
+                            </div>
+                            <div class="option-group">
+                                <label>File Type</label>
+                                <select id="file-type">
+                                    <option value="any">Any type</option>
+                                    <option value="pdf">PDF</option>
+                                    <option value="doc">DOC</option>
+                                    <option value="txt">TXT</option>
+                                    <option value="image">Images</option>
+                                    <option value="video">Videos</option>
+                                </select>
+                            </div>
+                            <div class="option-group">
+                                <label>Keywords</label>
+                                <input type="text" id="keywords" placeholder="Enter keywords...">
+                            </div>
+                            <div class="option-group">
+                                <label>Exclude Terms</label>
+                                <input type="text" id="exclude-terms" placeholder="Terms to exclude...">
+                            </div>
+                        </div>
+                        <div class="advanced-search-actions">
+                            <button id="apply-filters" class="primary-button">Apply Filters</button>
+                            <button id="reset-filters" class="secondary-button">Reset</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results Tabs -->
+                <div class="results-tabs">
+                    <button class="tab-button active" data-tab="all">All Results</button>
+                    <button class="tab-button" data-tab="local">Local Content</button>
+                    <button class="tab-button" data-tab="bookmarks">Bookmarks</button>
+                    <button class="tab-button" data-tab="history">History</button>
+                </div>
+
+                <!-- Results Content -->
+                <div class="results-content">
+                    <div class="tab-content active" id="all-results">
+                        <div class="no-results">
+                            <i class="fas fa-search"></i>
+                            <p>Start typing to search...</p>
+                        </div>
+                    </div>
+                    <div class="tab-content" id="local-results">
+                        <div class="local-content">
+                            <h3>Local Content Search</h3>
+                            <div class="file-explorer">
+                                <button id="browse-files" class="secondary-button">
+                                    <i class="fas fa-folder-open"></i> Browse Files
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tab-content" id="bookmarks-results">
+                        <div class="bookmarks-list">
+                            <h3>Saved Bookmarks</h3>
+                            <div class="bookmarks-container"></div>
+                        </div>
+                    </div>
+                    <div class="tab-content" id="history-results">
+                        <div class="search-history">
+                            <h3>Search History</h3>
+                            <div class="history-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Settings Panel -->
+        <div class="settings-panel" id="settings-panel">
+            <div class="settings-content">
+                <h2>Settings</h2>
+                <div class="settings-section">
+                    <h3>Theme</h3>
+                    <div class="theme-options">
+                        <button class="theme-option active" data-theme="light">Light</button>
+                        <button class="theme-option" data-theme="dark">Dark</button>
+                        <button class="theme-option" data-theme="system">System</button>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3>Search Settings</h3>
+                    <div class="setting-option">
+                        <label>Enable Voice Search</label>
+                        <input type="checkbox" id="voice-search-toggle" checked>
+                    </div>
+                    <div class="setting-option">
+                        <label>Show Suggestions</label>
+                        <input type="checkbox" id="suggestions-toggle" checked>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3>Privacy</h3>
+                    <div class="setting-option">
+                        <label>Save Search History</label>
+                        <input type="checkbox" id="save-history-toggle" checked>
+                    </div>
+                    <div class="setting-option">
+                        <label>Save Bookmarks</label>
+                        <input type="checkbox" id="save-bookmarks-toggle" checked>
+                    </div>
+                </div>
+                <div class="settings-actions">
+                    <button id="save-settings" class="primary-button">Save Settings</button>
+                    <button id="close-settings" class="secondary-button">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="js/main.js"></script>
+</body>
+
+</html>

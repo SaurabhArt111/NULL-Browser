@@ -1,0 +1,131 @@
+/* Light Theme Variables */
+.light-theme {
+    --bg-color: #ffffff;
+    --text-color: #333333;
+    --secondary-text: #666666;
+    --primary-color: #4285f4;
+    --primary-hover: #3367d6;
+    --secondary-bg: #f5f5f5;
+    --border-color: #e0e0e0;
+    --hover-color: #f0f0f0;
+    --input-bg: #e2e2e2;
+    --panel-bg: #ffffff;
+    --icon-color: #666666;
+    --placeholder-color: #999999;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Dark Theme Variables */
+.dark-theme {
+    --bg-color: #202124;
+    --text-color: #e8eaed;
+    --secondary-text: #9aa0a6;
+    --primary-color: #8ab4f8;
+    --primary-hover: #aecbfa;
+    --secondary-bg: #303134;
+    --border-color: #5f6368;
+    --hover-color: #3c4043;
+    --input-bg: #303134;
+    --panel-bg: #303134;
+    --icon-color: #9aa0a6;
+    --placeholder-color: #9aa0a6;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+}
+
+/* System Theme Detection */
+@media (prefers-color-scheme: dark) {
+    body:not(.light-theme):not(.dark-theme) {
+        --bg-color: #202124;
+        --text-color: #e8eaed;
+        --secondary-text: #9aa0a6;
+        --primary-color: #8ab4f8;
+        --primary-hover: #aecbfa;
+        --secondary-bg: #303134;
+        --border-color: #5f6368;
+        --hover-color: #3c4043;
+        --input-bg: #303134;
+        --panel-bg: #303134;
+        --icon-color: #9aa0a6;
+        --placeholder-color: #9aa0a6;
+        --shadow-color: rgba(0, 0, 0, 0.3);
+    }
+}
+
+/* Theme Transition */
+body {
+    transition: background-color 0.3s ease,
+                color 0.3s ease,
+                border-color 0.3s ease;
+}
+
+/* Additional Dark Theme Specific Styles */
+.dark-theme .search-input-container {
+    background-color: var(--input-bg);
+}
+
+.dark-theme .search-input-container:focus-within {
+    box-shadow: 0 0 0 2px var(--primary-color);
+}
+
+.dark-theme .filter-button {
+    border-color: var(--border-color);
+}
+
+.dark-theme .filter-button:hover {
+    background-color: var(--hover-color);
+}
+
+.dark-theme .tab-button {
+    color: var(--text-color);
+}
+
+.dark-theme .tab-button:hover {
+    color: var(--primary-color);
+}
+
+.dark-theme .settings-panel {
+    background-color: var(--panel-bg);
+    border-left-color: var(--border-color);
+}
+
+.dark-theme .theme-option {
+    border-color: var(--border-color);
+    color: var(--text-color);
+}
+
+.dark-theme .theme-option:hover {
+    background-color: var(--hover-color);
+}
+
+.dark-theme .setting-option label {
+    color: var(--text-color);
+}
+
+.dark-theme .setting-option input[type="checkbox"] {
+    accent-color: var(--primary-color);
+}
+
+/* High Contrast Theme */
+.high-contrast-theme {
+    --bg-color: #000000;
+    --text-color: #ffffff;
+    --secondary-text: #cccccc;
+    --primary-color: #ffff00;
+    --primary-hover: #ffff33;
+    --secondary-bg: #333333;
+    --border-color: #ffffff;
+    --hover-color: #444444;
+    --input-bg: #000000;
+    --panel-bg: #000000;
+    --icon-color: #ffffff;
+    --placeholder-color: #cccccc;
+    --shadow-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Reduced Motion Theme */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation: none !important;
+        transition: none !important;
+    }
+} 
