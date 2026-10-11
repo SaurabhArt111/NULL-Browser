@@ -12,6 +12,7 @@ from PyQt6.QtTest import QTest
 
 RESULTS = []
 DIALOGS = []                      # (title, text) of every native dialog the browser showed
+SOURCE_VIEWS = []
 _answer = {"label": "Block"}      # which button the auto-answerer presses
 _keep = []
 WATCHDOG_MS = 200_000
@@ -19,8 +20,13 @@ WATCHDOG_MS = 200_000
 
 def _auto_dialog():
     """Presses a button on any modal QMessageBox, exactly like a user would (permission prompts are real dialogs)."""
-    from PyQt6.QtWidgets import QApplication, QMessageBox
+    from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox, QPlainTextEdit
     w = QApplication.activeModalWidget()
+    if isinstance(w, QDialog) and w.windowTitle().startswith("Page source:"):
+        text = w.findChild(QPlainTextEdit)
+        SOURCE_VIEWS.append(text.toPlainText() if text else "")
+        w.reject()
+        return
     if isinstance(w, QMessageBox):
         DIALOGS.append((w.windowTitle(), w.text()))
         for b in w.buttons():
@@ -175,6 +181,14 @@ def _run(app, outdir):
 
     # ---- web page, permissions shim, adblock, popup -----------------------------------------------------
     ok("local web page loads", load(t, base + "/perm.html"))
+    source_count = len(SOURCE_VIEWS)
+    tab_count = len(w.tabs)
+    t.view_source()
+    source_ready = wait_until(lambda: len(SOURCE_VIEWS) == source_count + 1)
+    source_text = SOURCE_VIEWS[-1] if source_ready else ""
+    ok("View page source opens inert serialized DOM",
+       source_ready and len(w.tabs) == tab_count and "navigator.requestMIDIAccess()" in source_text,
+       source_text[:100].replace("\n", " "))
     wait_until(lambda: js(t, "!!window.R && R.done"), 5000)
     r = json.loads(js(t, "JSON.stringify(R)") or "{}")
     origin = f"http://127.0.0.1:{srv.server_address[1]}"

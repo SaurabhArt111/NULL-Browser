@@ -34,7 +34,7 @@ names also work: `chrome://settings`, `edge://history`, `about:settings`, and th
 - **Bookmarks** – folders, bookmarks bar, edit dialog, import / export (Netscape HTML, compatible with Chrome/Edge/Brave/Firefox).
 - **Downloads** – live progress, pause / resume / cancel, open file, show in folder, missing-file detection, dangerous-file warning, native completion notification.
 - **Settings** – the sidebar structure of Chrome's settings, with search across all pages: You, Privacy and security, Site settings, Performance, Appearance, Search engine, Default browser, On startup, Languages, Downloads, Accessibility, System, Reset.
-- **Developer tools** – the real Chromium DevTools (Elements, Console, Network, Sources, Performance) docked right / bottom or in its own window (`F12`, `Ctrl+Shift+I`, *Inspect* in the context menu), plus view-source, remote-debugging port, and `null://logs`.
+- **Developer tools** – the real Chromium DevTools (Elements, Console, Network, Sources, Performance) docked right / bottom or in its own window (`F12`, `Ctrl+Shift+I`, *Inspect* in the context menu), plus a rendered-DOM source viewer, remote-debugging port, and `null://logs`.
 
 **Browser behaviour:** pinned / draggable tabs, audio indicators and mute, tab search, reopen closed tab, session restore,
 Memory Saver (discards inactive tabs), per-site zoom, find in page, print / save as PDF, full-screen video, InPrivate

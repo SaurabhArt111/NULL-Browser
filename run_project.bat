@@ -8,6 +8,6 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 echo Starting project...
-powershell -NoProfile -Command "Start-Process -FilePath '%~dp0Search_Engine\Null Search Engine\run_engine.bat' -WorkingDirectory '%~dp0Search_Engine\Null Search Engine' | Out-Null"
+start "" "%~dp0Search_Engine\Null Search Engine\run_engine.bat"
 timeout /t 3 /nobreak >nul
-powershell -NoProfile -Command "Start-Process -FilePath '%~dp0Search_Engine\Null Browser\run_browser.bat' -WorkingDirectory '%~dp0Search_Engine\Null Browser' | Out-Null"
+start "" "%~dp0Search_Engine\Null Browser\run_browser.bat"

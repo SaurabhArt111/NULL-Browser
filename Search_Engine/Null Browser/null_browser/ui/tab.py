@@ -10,7 +10,8 @@ from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtWebEngineCore import QWebEngineLoadingInfo, QWebEnginePage, QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QInputDialog, QLabel,
-                             QLineEdit, QMenu, QMessageBox, QPushButton, QSplitter, QToolButton, QVBoxLayout, QWidget)
+                             QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QToolButton,
+                             QVBoxLayout, QWidget)
 
 from ..constants import SCHEME
 from ..core import crash
@@ -591,9 +592,29 @@ class Tab(QWidget):
 
     # ---- tools --------------------------------------------------------------------------------------
     def view_source(self):
-        u = self.real_url().toString()
-        if u.startswith(("http", "file")):
-            self.openTab.emit("view-source:" + u, False, None)
+        url = self.real_url()
+        if url.scheme() in ("http", "https", "file"):
+            source_url = url.toString()
+            try:
+                self.page.toHtml(lambda source: self._show_source(source or "", source_url))
+            except Exception:
+                crash.log.exception("could not read page source")
+
+    @crash.guarded(quiet=True)
+    def _show_source(self, source, source_url):
+        dialog = QDialog(self.window())
+        dialog.setWindowTitle(f"Page source: {QUrl(source_url).host() or source_url}")
+        dialog.resize(1000, 700)
+        layout = QVBoxLayout(dialog)
+        text = QPlainTextEdit(dialog)
+        text.setReadOnly(True)
+        text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        text.setPlainText(source or "(empty document)")
+        layout.addWidget(text)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
 
     def _default_name(self):
         return re.sub(r"[^\w\- .]", "_", self.title())[:80] or "page"
