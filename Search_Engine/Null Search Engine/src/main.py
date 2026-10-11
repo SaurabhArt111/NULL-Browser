@@ -246,7 +246,8 @@ async def api_crawl_status():
 if __name__ == "__main__":
     import uvicorn
     try:
-        uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+        port = int(os.environ.get("NULL_SEARCH_PORT", "8000"))
+        uvicorn.run(app, host="127.0.0.1", port=port, reload=False)
     except OSError as e:
-        print(f"Could not start the server (is port 8000 already in use?): {e}")
+        print(f"Could not start the server (is the port already in use?): {e}")
         sys.exit(1)

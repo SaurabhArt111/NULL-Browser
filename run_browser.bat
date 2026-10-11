@@ -1,4 +1,8 @@
 @echo off
 cd /d "%~dp0"
-start "Null Search Engine" cmd /k "cd /d ""%~dp0Search_Engine\Null Search Engine"" && run_engine.bat"
-start "Null Browser" cmd /k "cd /d ""%~dp0Search_Engine\Null Browser"" && run_browser.bat"
+if not exist ".venv\Scripts\pythonw.exe" (
+    call "%~dp0setup_and_run.bat"
+    exit /b
+)
+rem Starts Null Browser without a console window. The local Null Search server is started by the browser itself.
+start "" ".venv\Scripts\pythonw.exe" "Search_Engine\Null Browser\main.py" %*

@@ -1,109 +1,118 @@
-# Null Browser + Null Search Engine
+# Null Browser
 
-A privacy-focused desktop browser (PyQt6 / QtWebEngine) with a companion
-local search engine (FastAPI). This build focuses on making the *existing*
-project actually work end-to-end, harden its error handling, and bring it
-closer to Chrome/Brave/Edge in the areas you asked for.
+A desktop browser with its own interface, its own built-in pages, its own permission system and ad blocker, and a
+linked local search engine (Null Search). It is a rewrite of the earlier PyQt prototype, not a patch on it.
 
-## What's genuinely new/fixed in this pass
+**What it is, honestly.** Pages are rendered by Chromium through Qt WebEngine, the same arrangement as
+many other non-Google browsers. Writing a rendering engine from scratch is a multi-year, multi-hundred-engineer job and
+was not attempted. Everything *around* the engine (tabs, address bar, history, bookmarks, downloads, settings, site
+permissions, ad blocking, error handling, notifications, the search link) is Null Browser's own code.
 
-**Null Browser**
-- Built-in ad & tracker blocker (`ui/adblock.py`) - blocks common ad/tracker
-  domains and paths at the network-request level, with a shield button
-  showing how many were blocked, a per-site allow-list, and a toggle in
-  Settings → Privacy & Security.
-- Popup blocker (blocks chrome-less `window.open()` popups, the kind ad
-  scripts spawn), toggleable.
-- Offline "New Tab" page (search box + bookmark tiles) so the browser is
-  fully usable even if the search engine server isn't running - the old
-  version hard-navigated to `localhost:8000` and broke if that wasn't up.
-- Friendly error page on failed loads instead of a blank tab.
-- Security/connection indicator (padlock/warning icon) next to the address
-  bar based on the page's scheme.
-- InPrivate/incognito windows now actually use an off-the-record
-  QWebEngineProfile (in-memory cache, no persistent cookies, no history
-  writes) instead of just changing the window title.
-- "Clear browsing data" (Ctrl+Shift+Delete) that really clears cache,
-  cookies, and history via QtWebEngine's profile APIs.
-- Full keyboard shortcut set: Ctrl+T/W/N/Shift+N/Shift+T (reopen closed
-  tab)/L/D/H/J/F/R/0/+/-, Alt+Left/Right, Ctrl+Tab, Alt+1-9, Ctrl+Shift+I
-  (DevTools), etc. - de-duplicated so Qt doesn't treat any of them as
-  "ambiguous".
-- Bookmark bar under the address bar, movable/draggable tabs, a "+"
-  corner button for new tabs, middle-click to close a tab, a subtle fade
-  transition on tab switches and theme changes (Qt Widgets has no native
-  CSS transitions, so this is done with QPropertyAnimation).
-- 5 built-in themes (Light/Dark/Night/Brave/Ocean) plus a custom accent
-  colour picker, applied via one shared stylesheet that also styles the
-  bookmark bar.
-- Downloads now go through the existing `DownloadManager` dialog
-  (progress bars, open file/folder, clear) instead of a disconnected list
-  that never actually showed progress.
-- Removed a UI-freezing busy-loop that used to "simulate" load progress
-  with a blocking `for` loop; replaced with a proper indeterminate
-  progress bar.
-- Defensive error handling throughout: a bad page load, a broken bookmark,
-  a failed download, or a settings-file issue now shows a status-bar
-  message instead of crashing the app.
+## Quick start
 
-**Null Search Engine**
-- The FastAPI backend was a stub (hardcoded `["Result 1", "Result 2", ...]`)
-  - it's now wired to a real TF-IDF inverted index and a polite,
-    robots.txt-respecting crawler:
-  - `GET /api/search?q=&limit=` - ranked results
-  - `GET /api/suggest?q=` - autocomplete
-  - `POST /api/crawl` - crawl a list of seed URLs into the index
-  - `GET /api/stats`, `GET /api/crawl/status`
-- The web UI's JavaScript (`app.js`/`search.js`/`storage.js`/`themes.js`/
-  `voice.js`) declared clashing globals and, critically, **was never
-  `<script>`-included by `index.html`** - the search box didn't do
-  anything. Replaced with one consolidated `js/main.js` that actually
-  wires up search, suggestions, theme switching, bookmarks, history, and
-  settings, plus the missing CSS for results/suggestions/toasts.
-- Fixed two duplicate `id="history-toggle"` / `id="bookmarks-toggle"`
-  elements (a nav button and a settings checkbox shared the same id, so
-  `getElementById` only ever found the button).
-- Static file serving for `css/`/`js/`, safe (escaped) result rendering.
+| OS | Run |
+|---|---|
+| Windows | double-click **`setup_and_run.bat`** (first run: creates `.venv`, installs dependencies, starts the browser). Afterwards use **`run_browser.bat`**. |
+| macOS / Linux | `./setup_and_run.sh` the first time, then `./run_browser.sh` |
 
-## Requirements & honesty about scope
+Needs Python 3.10 – 3.13 and an internet connection for the first install. If something misbehaves, run
+`run_browser_debug.bat` for a console with verbose logging.
 
-This is **not** a from-scratch Chromium fork - "all the features of
-Chrome/Brave/Edge" isn't achievable in one pass (those are multi-million
-line codebases). What's delivered is a real, working PyQt6/QtWebEngine
-browser shell (which already gives you Chromium's rendering engine, so
-pages render exactly like they would in Chrome) with the browser-chrome
-features listed above. Password/autofill storage, extensions, and sync are
-not implemented.
+Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--debug] [--new-instance]`.
+`--data-dir` gives a portable profile.
 
-The search engine indexes whatever you point its crawler at - it does not
-ship with a pre-built index of "the internet". Point `/api/crawl` at a
-handful of sites you care about, or use Google/Bing/DuckDuckGo from the
-search-engine dropdown in the browser for general web search.
+## What you get
 
-## Running it
+**Built-in pages** (real web pages served from inside the browser on `null://`, so they have proper layout, search and
+dark mode): `null://history`, `bookmarks`, `downloads`, `settings`, `about`, `version`, `logs`, `newtab`. Chrome-style
+names also work: `chrome://settings`, `edge://history`, `about:settings`, and the address-bar shortcuts `@history foo`,
+`@bookmarks foo`, `@settings`.
 
-### Search engine (optional but recommended)
-```bash
-cd "Search_Engine/Null Search Engine"
-pip install -r requirements.txt
-python src/main.py
-# -> http://127.0.0.1:8000
+- **History** – grouped by day, search, per-item delete, multi-select, *Clear browsing data* with time range.
+- **Bookmarks** – folders, bookmarks bar, edit dialog, import / export (Netscape HTML, compatible with Chrome/Edge/Brave/Firefox).
+- **Downloads** – live progress, pause / resume / cancel, open file, show in folder, missing-file detection, dangerous-file warning, native completion notification.
+- **Settings** – the sidebar structure of Chrome's settings, with search across all pages: You, Privacy and security, Site settings, Performance, Appearance, Search engine, Default browser, On startup, Languages, Downloads, Accessibility, System, Reset.
+- **Developer tools** – the real Chromium DevTools (Elements, Console, Network, Sources, Performance) docked right / bottom or in its own window (`F12`, `Ctrl+Shift+I`, *Inspect* in the context menu), plus view-source, remote-debugging port, and `null://logs`.
+
+**Browser behaviour:** pinned / draggable tabs, audio indicators and mute, tab search, reopen closed tab, session restore,
+Memory Saver (discards inactive tabs), per-site zoom, find in page, print / save as PDF, full-screen video, InPrivate
+windows (separate off-the-record profile, dark purple theme, nothing written to disk), single-instance forwarding,
+system-tray mode, a live Chrome-style omnibox (history, bookmarks, search suggestions, `@engine` shortcuts, `?` to force search).
+
+**Ad & tracker blocking:** built-in, no extension needed. Shield button shows blocked count, with a per-site off switch and custom rules.
+Sends *Do Not Track* and *Global Privacy Control*.
+
+**Native feel:** Windows taskbar identity and dark title bar, system toast / Notification Center for downloads and for website
+notifications you allowed, native print dialog, theme follows the OS dark-mode setting live.
+
+## Search: Google, linked with Null Search
+
+Google is the default address-bar engine. Null Search (`Null Search Engine/`, the FastAPI project you already had)
+is linked in:
+
+- The browser starts it in the background on launch and stops it on exit (Settings → Search engine → start / stop / port).
+- Type **`@null query`** to use it for one search, **`@google`**, **`@ddg`**, **`@bing`**, **`@brave`** likewise, or pick any of them as the default. Add your own engine with `%s`.
+- *Index my bookmarks in Null Search* crawls your bookmarked pages into its index.
+- If the server is down or its Python packages are missing, nothing breaks: the browser keeps working and the New Tab page and Settings say why.
+
+## Site permissions
+
+All 38 settings from your list (plus a few Chromium extras) exist with exactly your defaults (Location / Camera / Microphone Ask, Motion sensors Allow,
+Pop-ups Block, Automatic downloads Allow, …), each with a global default plus per-site exceptions
+(`null://settings/content`, or the lock icon in the address bar). Ask prompts appear as a native bubble / dialog; decisions
+are remembered per site (forgotten when private windows close).
+
+Not every Chromium feature can be controlled from Qt, so each setting carries a badge saying how it is enforced:
+
+| Badge | Meaning | Settings |
+|---|---|---|
+| Enforced | Qt asks the browser and Null Browser decides | Location, Camera, Microphone, Notifications, Clipboard, Fonts, Screen sharing, Cursor lock |
+| Enforced | Applied through engine settings, request filtering or the cookie filter | JavaScript, Images, Pop-ups, Intrusive ads, Sound, Automatic downloads, Insecure content, Cookies, Autoplay |
+| Enforced (API gate) | The JS API is removed (Block) or put behind a native prompt (Ask) before page scripts run | MIDI, USB, Serial, HID, File editing, Motion sensors, Background sync, Payment handlers, AR, VR, Hand tracking, Your device use, Window management, Auto picture-in-picture, Web app installations, Apps on device, Protected content IDs, Third-party sign-in |
+| Applies after restart | Chromium command-line flag | JavaScript optimization & security |
+| Saved only | Qt exposes no hook yet | Scrolling and zooming shared tabs, Local network |
+
+The API gate works by wrapping or removing the page-visible JavaScript APIs, which is effective against ordinary sites but is not
+a security boundary against deliberately hostile code. It is off in safe mode.
+
+## Self error handling
+
+- Every Python exception (main thread, worker threads, Qt slots) is logged, kept for `null://logs`, and shown as a small toast, never a crash.
+- A burst of errors offers to restart in **safe mode**; three failed starts in a row enter safe mode automatically.
+- Renderer crashes show an "Aw, Snap" page with Reload instead of a blank tab. Network, DNS, TLS and unsafe-port errors get explanatory pages; HTTPS-first upgrades fall back to HTTP only when the secure connection fails.
+- Settings and database files that fail to load are moved aside (`*.corrupt-<time>`) and rebuilt, so a damaged profile can't stop startup.
+- Native crashes write a traceback to `logs/native-crash.log`. Logs rotate in the data folder (Settings → System → *Open data folder*).
+
+## Verification
+
+`python main.py --selftest OUTDIR` launches the whole browser headless and runs 60+ end-to-end checks (internal pages render
+with no JS errors, address-bar parsing, every shim gate with real prompts, permission persistence, ad blocking, pop-up
+blocking, API-token protection, bookmarks, history, error pages, clean shutdown) and saves screenshots.
+It runs against a throw-away profile; the last run in the Linux build environment passed 63 of 63 checks (2 more were skipped because they
+need a real display or network).
+
+**Not tested:** Windows and macOS. The code uses only cross-platform Qt APIs plus guarded Windows calls (taskbar ID, dark title
+bar), but nobody has run it there yet. If the first launch fails, `run_browser_debug.bat` output and `logs/null-browser.log` will show why.
+
+## Known limits
+
+- No extensions, password manager / autofill, account sync, translation, or Chrome's Live Caption.
+- DRM-protected video (Netflix, Spotify web) needs Widevine, which Qt WebEngine builds don't ship, so those sites may refuse to play.
+- Spell-check needs Qt's dictionary files installed separately.
+- *Default browser* opens your OS's default-apps settings; the OS decides, no registry changes are made.
+
+## Layout
+
 ```
-Then, to build a starter index:
-```bash
-curl -X POST http://127.0.0.1:8000/api/crawl \
-  -H "Content-Type: application/json" \
-  -d '{"seeds": ["https://en.wikipedia.org/wiki/Web_browser"], "max_pages": 30}'
+setup_and_run.bat / .sh      one-time setup + launch          run_browser.bat / .sh   daily launcher
+Search_Engine/
+  Null Browser/
+    main.py                  launcher
+    null_browser/
+      main.py  app.py        start-up, profiles, policies, session, tray
+      core/                  db, settings, permissions, adblock, downloads, search, engine_service, notify, crash
+      ui/                    window, tab, tabbar, omnibox, popups, theme, icons, native
+      web/                   null:// scheme handler, JSON API, pages/ and static/ for the built-in pages
+      selftest.py            headless end-to-end test
+  Null Search Engine/        FastAPI + TF-IDF index + crawler (unchanged apart from a configurable port)
 ```
-
-### Browser
-```bash
-cd "Search_Engine/Null Browser"
-pip install -r requirements.txt
-python src/main.py            # normal window
-python src/main.py --private  # InPrivate window
-```
-
-The browser works fine with the search engine server stopped - it'll just
-fall back to the offline New Tab page and tell you (in the status bar) if
-you pick "Null Search" as your engine while the server's down.

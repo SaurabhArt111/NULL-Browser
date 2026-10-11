@@ -1,0 +1,108 @@
+# Null Browser built-in blocklist: one domain per line (subdomains are matched too).
+# Lines starting with "##" are tracker-only (blocked as third-party requests only when "Block trackers" is on).
+# Add your own rules in null://settings/privacy -> Custom rules. EasyList style '||example.com^' lines are accepted.
+doubleclick.net
+googlesyndication.com
+googleadservices.com
+googletagservices.com
+adservice.google.com
+pagead2.googlesyndication.com
+adnxs.com
+adsrvr.org
+advertising.com
+adform.net
+adroll.com
+criteo.com
+criteo.net
+outbrain.com
+taboola.com
+moatads.com
+media.net
+pubmatic.com
+rubiconproject.com
+openx.net
+casalemedia.com
+bluekai.com
+mathtag.com
+adsafeprotected.com
+amazon-adsystem.com
+smartadserver.com
+adtechus.com
+yieldmo.com
+sharethrough.com
+teads.tv
+spotxchange.com
+tremorhub.com
+adcolony.com
+chitika.com
+revcontent.com
+mgid.com
+popads.net
+propellerads.com
+exoclick.com
+juicyads.com
+trafficjunky.net
+onclickmax.com
+clicksor.com
+zedo.com
+adblade.com
+infolinks.com
+vungle.com
+applovin.com
+ironsrc.com
+adition.com
+33across.com
+lijit.com
+sovrn.com
+indexww.com
+contextweb.com
+ads.yahoo.com
+advertising.yahoo.com
+adserver.yahoo.com
+ads-twitter.com
+ads.linkedin.com
+ads.tiktok.com
+analytics.tiktok.com
+ads.pinterest.com
+ads.reddit.com
+adsymptotic.com
+serving-sys.com
+bidswitch.net
+demdex.net
+krxd.com
+eyeota.net
+tapad.com
+rlcdn.com
+agkn.com
+crwdcntrl.net
+## scorecardresearch.com
+## quantserve.com
+## google-analytics.com
+## googletagmanager.com
+## analytics.google.com
+## connect.facebook.net
+## bat.bing.com
+## hotjar.com
+## static.hotjar.com
+## mixpanel.com
+## segment.io
+## segment.com
+## fullstory.com
+## adjust.com
+## appsflyer.com
+## branch.io
+## chartbeat.com
+## newrelic.com
+## nr-data.net
+## clarity.ms
+## mouseflow.com
+## crazyegg.com
+## optimizely.com
+## amplitude.com
+## heap.io
+## heapanalytics.com
+## stats.wp.com
+## pixel.facebook.com
+## analytics.twitter.com
+## px.ads.linkedin.com
+## snap.licdn.com
