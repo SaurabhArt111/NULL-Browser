@@ -15,7 +15,9 @@ permissions, ad blocking, error handling, notifications, the search link) is Nul
 | Windows | double-click **`setup_and_run.bat`** (first run: creates `.venv`, installs dependencies, starts the browser). Afterwards use **`run_browser.bat`**. |
 | macOS / Linux | `./setup_and_run.sh` the first time, then `./run_browser.sh` |
 
-Needs Python 3.10 – 3.13 and an internet connection for the first install. If something misbehaves, run
+Needs Python 3.10 or newer (3.12 / 3.13 recommended) and an internet connection for the first install. Setup installs prebuilt
+packages only (nothing is compiled, so locked-down PCs work), and Null Search is optional: if its packages can't install,
+setup counts a warning and the browser still starts. If something misbehaves, run
 `run_browser_debug.bat` for a console with verbose logging.
 
 Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--debug] [--new-instance]`.
