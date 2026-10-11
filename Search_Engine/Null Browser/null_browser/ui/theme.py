@@ -69,6 +69,7 @@ QToolButton#newtab {{ border-radius: 13px; padding: 4px; margin: 6px 2px 0 2px; 
 QToolButton#bm {{ border-radius: 8px; padding: 4px 8px; font-size: 12px; }}
 QToolButton#tabclose, QToolButton#tabaudio {{ border-radius: 9px; padding: 3px; }}
 QToolButton#tabclose:hover, QToolButton#tabaudio:hover {{ background: {p['press']}; }}
+QToolButton#devtoolsClose {{ border-radius: 6px; padding: 2px 8px; }}
 QToolButton#chip {{ border-radius: 12px; padding: 3px 9px 3px 6px; font-size: 12px; background: {p['field']}; }}
 QToolButton#chip:hover {{ background: {p['hover']}; }}
 QLabel#privatebadge {{ background: {a}; color: white; border-radius: 11px; padding: 3px 12px; font-weight: 600; }}

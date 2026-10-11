@@ -8,7 +8,9 @@ import time
 import traceback
 
 from PyQt6.QtCore import QEventLoop, QTimer
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QToolButton
 
 RESULTS = []
 DIALOGS = []                      # (title, text) of every native dialog the browser showed
@@ -178,6 +180,19 @@ def _run(app, outdir):
                                       ("192.168.1.1", False, "http://192.168.1.1"), ("http://a.b/c d", False, "http://a.b/c d")):
         u, s = S.to_url(text)
         ok(f"omnibox '{text}'", s == expect_search and frag in u, f"{u} {s}")
+    old_engine_state = app.engine.state
+    old_search_engine = app.settings.data.get("search_engine")
+    app.engine.state = "unavailable"
+    app.settings.data["search_engine"] = "null"
+    offline_urls = [app.resolve_text("offline search terms")[0], app.resolve_text("@null local query")[0],
+                    app.resolve_text("?forced query")[0]]
+    ok("offline Null Search falls back to Google",
+       all("google.com/search?q=" in u for u in offline_urls), str(offline_urls))
+    if old_search_engine is None:
+        app.settings.data.pop("search_engine", None)
+    else:
+        app.settings.data["search_engine"] = old_search_engine
+    app.engine.state = old_engine_state
 
     # ---- web page, permissions shim, adblock, popup -----------------------------------------------------
     ok("local web page loads", load(t, base + "/perm.html"))
@@ -297,7 +312,25 @@ def _run(app, outdir):
     cur.toggle_devtools()
     QTest.qWait(1500)
     ok("devtools opens", cur.devtools is not None)
+    devtools_dark = cur.devtools.settings().testAttribute(QWebEngineSettings.WebAttribute.ForceDarkMode)
+    devtools_theme = {}
+    cur.devtools.page().runJavaScript(
+        "document.documentElement.classList.contains('theme-with-dark-background')",
+        lambda value: devtools_theme.setdefault("dark", value))
+    wait_until(lambda: "dark" in devtools_theme, 2000)
+    ok("DevTools color mode follows browser theme",
+       devtools_dark == app.pal(cur.private)["dark"]
+       and devtools_theme.get("dark") == app.pal(cur.private)["dark"],
+       f"dark mode={devtools_dark}, frontend class={devtools_theme.get('dark')}")
     shot(w, outdir, "devtools")
+    if cur.devtools_host is not None:
+        close_devtools = cur.devtools_host.findChild(QToolButton, "devtoolsClose")
+        if close_devtools:
+            close_devtools.click()
+        wait_until(lambda: cur.devtools is None, 2000)
+        ok("DevTools close button closes dock", cur.devtools is None)
+        cur.toggle_devtools()
+        QTest.qWait(300)
     cur.toggle_devtools()
     ok("devtools closes", cur.devtools is None)
     load(cur, "http://127.0.0.1:9/unreachable")

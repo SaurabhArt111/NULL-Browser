@@ -152,6 +152,23 @@ class BrowserApp(QObject):
     def open_window(self, url=None, private=False):
         return self.new_window(private=bool(private), url=url)
 
+    def resolve_text(self, text):
+        url, is_search = self.search.to_url(text)
+        if not is_search or self.engine.state in ("running", "external"):
+            return url, is_search
+        text = (text or "").strip()
+        selected, query = self.search.by_keyword(text)
+        engine = selected or self.search.current()
+        if not engine.get("local"):
+            if text.startswith("?") and self.search.current().get("local"):
+                query = text[1:].strip()
+            else:
+                return url, is_search
+        if selected is None and text.startswith("?"):
+            query = text[1:].strip()
+        google = self.search.engines()["google"]
+        return (self.search.search_url(query, google) if query else google["home"]), True
+
     def quit_all(self):
         self.quit()
 

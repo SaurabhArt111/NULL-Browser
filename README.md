@@ -55,7 +55,7 @@ is linked in:
 - The browser starts it in the background on launch and stops it on exit (Settings → Search engine → start / stop / port).
 - Type **`@null query`** to use it for one search, **`@google`**, **`@ddg`**, **`@bing`**, **`@brave`** likewise, or pick any of them as the default. Add your own engine with `%s`.
 - *Index my bookmarks in Null Search* crawls your bookmarked pages into its index.
-- If the server is down or its Python packages are missing, nothing breaks: the browser keeps working and the New Tab page and Settings say why.
+- Null Search is optional. If it is stopped or unavailable, normal browsing and other search engines continue working; searches that would have used Null Search fall back to Google. The New Tab page and Settings show its status.
 
 ## Site permissions
 

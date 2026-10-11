@@ -246,7 +246,7 @@ def downloads_clear(app, p, private):
 # ------------------------------------------------------------------ new tab / search
 @route("search/resolve")
 def search_resolve(app, p, private):
-    url, is_search = app.search.to_url(p.get("q", ""))
+    url, is_search = app.resolve_text(p.get("q", ""))
     return {"url": url or "null://newtab", "search": is_search}
 
 

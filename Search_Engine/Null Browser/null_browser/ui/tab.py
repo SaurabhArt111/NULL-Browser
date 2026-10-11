@@ -6,7 +6,7 @@ import time
 from urllib.parse import parse_qs, quote, urlsplit
 
 from PyQt6.QtCore import QBuffer, QIODevice, QSize, Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QDesktopServices
+from PyQt6.QtGui import QAction, QColor, QDesktopServices
 from PyQt6.QtWebEngineCore import QWebEngineLoadingInfo, QWebEnginePage, QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QInputDialog, QLabel,
@@ -82,6 +82,14 @@ class WebView(QWebEngineView):
             crash.log.exception("context menu")
 
 
+class _DevToolsView(QWebEngineView):
+    closeRequested = pyqtSignal()
+
+    def closeEvent(self, ev):
+        self.closeRequested.emit()
+        super().closeEvent(ev)
+
+
 class Tab(QWidget):
     titleChanged = pyqtSignal(object)
     urlChanged = pyqtSignal(object)
@@ -110,6 +118,7 @@ class Tab(QWidget):
         self.blocked_popups = 0
         self.last_active = time.time()
         self.devtools = None
+        self.devtools_host = None
         self.current_origin = ""
         self.discarded = False
         self.cert_failed = False
@@ -138,6 +147,7 @@ class Tab(QWidget):
 
         self._configure_settings()
         self._wire()
+        self.app.themeChanged.connect(self._restyle_devtools)
 
     # ---- setup ----------------------------------------------------------------------
     def _configure_settings(self):
@@ -658,22 +668,65 @@ class Tab(QWidget):
 
     def open_devtools(self):
         dock = self.app.settings.get("devtools_dock")
-        view = QWebEngineView()
+        view = _DevToolsView()
         dev_page = QWebEnginePage(self.profile, view)
         view.setPage(dev_page)
         self.page.setDevToolsPage(dev_page)
         self.devtools = view
+        dev_page.loadFinished.connect(lambda _ok: self._restyle_devtools())
+        view.closeRequested.connect(lambda: QTimer.singleShot(0, self.close_devtools))
         if dock == "window":
             view.setWindowTitle(f"DevTools - {self.title()}")
             view.setWindowIcon(icons.app_icon())
             view.resize(1100, 760)
             view.show()
-            view.installEventFilter(self)
         else:
+            host = QWidget(self)
+            host.setObjectName("devtoolsHost")
+            layout = QVBoxLayout(host)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            header = QFrame(host)
+            header.setObjectName("devtoolsHeader")
+            header_layout = QHBoxLayout(header)
+            header_layout.setContentsMargins(12, 2, 6, 2)
+            label = QLabel("Developer tools", header)
+            close = QToolButton(header)
+            close.setObjectName("devtoolsClose")
+            close.setText("\u2715")
+            close.setToolTip("Close developer tools")
+            close.clicked.connect(self.close_devtools)
+            header_layout.addWidget(label)
+            header_layout.addStretch(1)
+            header_layout.addWidget(close)
+            layout.addWidget(header)
+            layout.addWidget(view, 1)
+            self.devtools_host = host
+            self._restyle_devtools()
             self.split.setOrientation(Qt.Orientation.Vertical if dock == "bottom" else Qt.Orientation.Horizontal)
-            self.split.addWidget(view)
+            self.split.addWidget(host)
             total = self.split.height() if dock == "bottom" else self.split.width()
             self.split.setSizes([int(total * 0.55), int(total * 0.45)])
+
+    def _restyle_devtools(self):
+        if self.devtools is None:
+            return
+        colors = self.app.pal(self.private)
+        self.devtools.page().setBackgroundColor(QColor(colors["bar"]))
+        self.devtools.page().settings().setAttribute(WA.ForceDarkMode, colors["dark"])
+        mode = "dark" if colors["dark"] else "default"
+        script = (
+            "(() => {"
+            f"document.documentElement.classList.toggle('theme-with-dark-background', {str(colors['dark']).lower()});"
+            f"try {{ localStorage.setItem('uiTheme', '{mode}'); }} catch (e) {{}}"
+            "})()"
+        )
+        self.devtools.page().runJavaScript(script)
+        host = self.devtools_host
+        if host is not None:
+            header = host.findChild(QFrame, "devtoolsHeader")
+            if header is not None:
+                header.setStyleSheet(f"background:{colors['bar']};border-bottom:1px solid {colors['border']};")
 
     def close_devtools(self):
         if self.devtools is None:
@@ -681,17 +734,16 @@ class Tab(QWidget):
         try:
             self.page.setDevToolsPage(None)
         except Exception:
-            pass
+            log.exception("could not detach DevTools page")
         view, self.devtools = self.devtools, None
-        view.removeEventFilter(self)
+        host, self.devtools_host = self.devtools_host, None
         view.hide()
-        view.setParent(None)
-        view.deleteLater()
-
-    def eventFilter(self, obj, ev):
-        if obj is self.devtools and ev.type() == ev.Type.Close:
-            QTimer.singleShot(0, self.close_devtools)
-        return super().eventFilter(obj, ev)
+        if host is not None:
+            host.setParent(None)
+            host.deleteLater()
+        else:
+            view.setParent(None)
+            view.deleteLater()
 
     def session_entry(self):
         return {"url": self.real_url().toString(), "title": self.title(), "pinned": self.pinned}

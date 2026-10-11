@@ -6,6 +6,7 @@
 """
 import json
 import logging
+import os
 import sys
 
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, QUrl, pyqtSignal
@@ -56,6 +57,11 @@ class EngineService(QObject):
         env = QProcessEnvironment.systemEnvironment()
         env.insert("NULL_SEARCH_PORT", str(self.port))
         env.insert("PYTHONUNBUFFERED", "1")
+        engine_python = os.path.join(self.engine_dir, "..", "..", ".venv", "Scripts", "python.exe")
+        if sys.platform.startswith("win") and os.path.isfile(engine_python):
+            executable = engine_python
+        else:
+            executable = sys.executable
         self.proc.setProcessEnvironment(env)
         self.proc.setWorkingDirectory(self.engine_dir)
         self.proc.readyReadStandardOutput.connect(lambda: self._read(self.proc.readAllStandardOutput()))
@@ -63,7 +69,7 @@ class EngineService(QObject):
         self.proc.finished.connect(self._exited)
         self._stopping = False
         self.proc.errorOccurred.connect(lambda e: None if self._stopping else log.warning("Engine process error: %s", e))
-        self.proc.start(sys.executable, ["-u", "src/main.py"])
+        self.proc.start(executable, ["-u", "src/main.py"])
 
     def _read(self, data):
         for line in bytes(data).decode("utf-8", "replace").splitlines():

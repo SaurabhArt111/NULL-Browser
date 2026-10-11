@@ -531,7 +531,7 @@ class MainWindow(QMainWindow):
     # ===================================================================== navigation
     def navigate_text(self, text, new_tab=False):
         t = self.current()
-        url, is_search = self.app.search.to_url(text)
+        url, is_search = self.app.resolve_text(text)
         if not url:
             return
         if (not is_search and self.app.settings.get("https_first") and url.startswith("https://")
