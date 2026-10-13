@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, themebtn %}
+{% block title %}Local index - Null Search{% endblock %}
+{% block body %}
+<div class="top"><div class="row">
+  <a class="logo" href="/" title="Back to search"><b>N</b><span>Null</span></a><span class="grow"></span>{{ themebtn() }}
+</div></div>
+<div class="page">
+  <h1>Your local index</h1>
+  <p class="lead">Pages you add here are stored only on this computer and are searched together with the web results. Everything is crawled politely: robots.txt is respected and private network addresses are never fetched.</p>
+
+  <div class="stats">
+    <div class="stat"><b id="st-docs">{{ "{:,}".format(stats.documents) }}</b><span>pages indexed</span></div>
+    <div class="stat"><b id="st-hosts">{{ "{:,}".format(stats.hosts) }}</b><span>sites</span></div>
+    <div class="stat"><b id="st-words">{{ "{:,}".format(stats.words) }}</b><span>words</span></div>
+    <div class="stat"><b id="st-size">{{ (stats.db_bytes / 1048576)|round(1) }} MB</b><span>on disk</span></div>
+  </div>
+
+  <section class="panelbox" aria-labelledby="h-crawl">
+    <h2 id="h-crawl">Add sites</h2>
+    <form id="crawl-form">
+      <div class="field"><label for="urls">URLs to crawl (one per line)</label>
+        <textarea id="urls" name="urls" placeholder="https://docs.python.org/3/&#10;https://example.com" spellcheck="false" required></textarea></div>
+      <div class="inline">
+        <div class="field"><label for="max_pages" title="Upper bound on pages stored in this run">Max pages</label><input type="number" id="max_pages" value="50" min="1" max="5000"></div>
+        <div class="field"><label for="depth" title="0 = only the listed pages, 2 = follow links two levels deep">Link depth</label><input type="number" id="depth" value="2" min="0" max="5"></div>
+        <label class="chip" title="Only follow links that stay on the same site"><input type="checkbox" id="same_site" checked> Stay on same site</label>
+        <button class="btn primary" id="crawl-go" type="submit">{{ icon("play") }} Start crawl</button>
+        <button class="btn" id="crawl-stop" type="button" disabled>{{ icon("square") }} Stop</button>
+      </div>
+    </form>
+    <progress id="crawl-bar" max="100" value="0" hidden></progress>
+    <div id="crawl-msg" class="meta" role="status" aria-live="polite">{% if crawl.running %}Crawling…{% elif crawl.finished_at %}Last crawl: {{ crawl.pages_indexed }} pages indexed, {{ crawl.errors }} errors.{% else %}No crawl has run yet.{% endif %}</div>
+  </section>
+
+  <section class="panelbox" aria-labelledby="h-prov">
+    <h2 id="h-prov">Search providers</h2>
+    {% if providers %}<div class="examples">{% for p in providers %}<span class="pill {{ 'bad' if p.paused else 'ok' }}" title="Provides: {{ p.kinds|join(', ') }}{{ ' - paused after repeated failures' if p.paused }}">{{ p.name }} · {{ p.kinds|join('/') }}</span>{% endfor %}</div>
+    {% else %}<p class="meta">No web providers are active - only the local index is searched.</p>{% endif %}
+    <p class="meta">Keyless providers work out of the box. Set <code>BRAVE_API_KEY</code>, <code>NULL_SEARCH_SEARXNG_URL</code> or <code>GOOGLE_API_KEY</code> + <code>GOOGLE_CSE_ID</code> for higher quality - see the README.</p>
+  </section>
+
+  <section class="panelbox" aria-labelledby="h-pages">
+    <h2 id="h-pages">Recently indexed</h2>
+    {% if recent %}
+    <table class="t"><thead><tr><th>Page</th><th>Words</th><th></th></tr></thead><tbody>
+      {% for p in recent %}<tr><td class="ell"><a href="{{ p.url }}" rel="noopener noreferrer" title="{{ p.url }}">{{ p.title or p.url }}</a><div class="meta">{{ p.host }}</div></td><td>{{ p.words }}</td>
+        <td><button class="iconbtn" type="button" data-delete-url="{{ p.url }}" title="Remove this page from the index" aria-label="Remove">{{ icon("trash") }}</button></td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="meta">Nothing here yet. Add a site above.</p>{% endif %}
+    {% if stats.top_hosts %}<h2 class="meta">Sites</h2>
+    <table class="t"><tbody>{% for h in stats.top_hosts %}<tr><td>{{ h.host }}</td><td>{{ h.pages }} pages</td>
+      <td><button class="iconbtn" type="button" data-delete-host="{{ h.host }}" title="Remove every page from {{ h.host }}" aria-label="Remove site">{{ icon("trash") }}</button></td></tr>{% endfor %}</tbody></table>{% endif %}
+    <p><button class="btn danger" id="clear-all" type="button" title="Delete the entire local index">{{ icon("trash") }} Clear index</button></p>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/assets/admin.js" defer></script>{% endblock %}

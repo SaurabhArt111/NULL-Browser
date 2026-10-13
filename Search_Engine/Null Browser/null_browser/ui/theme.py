@@ -55,7 +55,8 @@ def stylesheet(p, accent):
     a = accent
     return f"""
 * {{ font-family: "Segoe UI Variable", "Segoe UI", system-ui, "SF Pro Text", "Noto Sans", sans-serif; font-size: 13px; }}
-QMainWindow, QDialog {{ background: {p['bar']}; color: {p['text']}; }}
+QMainWindow {{ background: {p['strip']}; color: {p['text']}; }}
+QDialog {{ background: {p['bar']}; color: {p['text']}; }}
 QWidget#tabstrip {{ background: {p['strip']}; }}
 QWidget#toolbar {{ background: {p['bar']}; }}
 QWidget#infobars {{ background: {p['bar']}; }}
@@ -65,7 +66,12 @@ QToolButton:hover {{ background: {p['hover']}; }}
 QToolButton:pressed {{ background: {p['press']}; }}
 QToolButton:disabled {{ color: {p['muted']}; }}
 QToolButton::menu-indicator {{ image: none; }}
-QToolButton#newtab {{ border-radius: 13px; padding: 4px; margin: 6px 2px 0 2px; }}
+QToolButton#newtab {{ border-radius: 13px; padding: 4px; margin: 10px 2px 0 4px; }}
+QToolButton#tabsearch {{ border-radius: 12px; padding: 4px; margin: 10px 4px 0 0; }}
+QToolButton#wc_min, QToolButton#wc_max, QToolButton#wc_close {{ border-radius: 0; padding: 0; margin: 0; background: transparent; }}
+QToolButton#wc_min:hover, QToolButton#wc_max:hover {{ background: {p['hover']}; }}
+QToolButton#wc_close:hover {{ background: #e81123; }}
+QFrame#drophint {{ background: {a}; border-radius: 1px; }}
 QToolButton#bm {{ border-radius: 8px; padding: 4px 8px; font-size: 12px; }}
 QToolButton#tabclose, QToolButton#tabaudio {{ border-radius: 9px; padding: 3px; }}
 QToolButton#tabclose:hover, QToolButton#tabaudio:hover {{ background: {p['press']}; }}

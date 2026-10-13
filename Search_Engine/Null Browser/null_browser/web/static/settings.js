@@ -49,13 +49,15 @@
     async function loadRules() {
       const a = await api("adblock/info"); rules.innerHTML = "";
       rules.append(h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, "Custom block rules"), h("div", { class: "sub" }, `${a.rules_total} rules loaded, ${a.blocked_total} requests blocked this session`)), ruleIn, h("button", { class: "btn", onclick: async () => { if (!ruleIn.value.trim()) return; const r = await api("adblock/add_rule", { rule: ruleIn.value }); if (!r.rule) return toast("Not a valid domain rule"); ruleIn.value = ""; loadRules(); } }, "Add")));
-      a.custom.forEach(r => rules.append(h("div", { class: "row", style: "min-height:44px" }, h("div", { class: "grow ellipsis" }, r), h("button", { class: "btn icon ghost", html: icon("x", "sm"), onclick: async () => { await api("adblock/remove_rule", { rule: r }); loadRules(); } }))));
-      a.allow.forEach(r => rules.append(h("div", { class: "row", style: "min-height:44px" }, h("div", { class: "grow ellipsis" }, h("span", { class: "badge ok" }, "ads allowed"), "  " + r), h("button", { class: "btn icon ghost", html: icon("x", "sm"), onclick: async () => { await api("adblock/allow", { host: r, allow: false }); loadRules(); } }))));
+      a.custom.forEach(r => rules.append(h("div", { class: "row", style: "min-height:44px" }, h("div", { class: "grow ellipsis" }, r), h("button", { class: "btn icon ghost", title: "Remove rule", "data-hint": "Stop blocking this pattern", html: icon("x", "sm"), onclick: async () => { await api("adblock/remove_rule", { rule: r }); loadRules(); } }))));
+      a.allow.forEach(r => rules.append(h("div", { class: "row", style: "min-height:44px" }, h("div", { class: "grow ellipsis" }, h("span", { class: "badge ok" }, "ads allowed"), "  " + r), h("button", { class: "btn icon ghost", title: "Block ads here again", "data-hint": "Remove this exception", html: icon("x", "sm"), onclick: async () => { await api("adblock/allow", { host: r, allow: false }); loadRules(); } }))));
     }
     loadRules();
     const exit = new Set(S.clear_on_exit || []);
     return [h("h1", {}, "Privacy and security"),
       card(actionRow("Clear browsing data", "Delete history, cookies, cache and more", "Clear data…", () => clearBrowsingDialog())),
+      h("h2", {}, "Sign-ins and site data"),
+      card(switchRow("Keep cookies and site data", "On (default): you stay signed in to websites, and cookies and site data are kept until you delete them in Clear browsing data. Turn off to keep them in memory only (they vanish when Null Browser closes; needs a relaunch). Null Browser never stores passwords or autofill data itself.", S.save_site_data !== false, v => set("save_site_data", v))),
       h("h2", {}, "Tracking protection"),
       card(switchRow("Block ads", "Built-in ad blocker (works without extensions)", S.adblock, v => set("adblock", v)),
         switchRow("Block trackers", "Analytics and tracking scripts loaded from other sites", S.block_trackers, v => set("block_trackers", v)),
@@ -94,7 +96,7 @@
     const radios = c.options.map(o => h("label", { class: "row click", style: "cursor:pointer" }, h("input", { type: "radio", name: "def", value: o.value, checked: o.value === c.current, style: "accent-color:var(--accent)",
       onchange: async () => { await api("perm/set_default", { feature: id, value: o.value }); c.current = o.value; if (id === "js_optimization") banner.style.display = "block"; toast("Saved", 1200); } }), h("div", { class: "grow" }, h("div", { class: "title" }, o.label))));
     const [elabel, ecls] = ENFORCE[c.enforce];
-    const out = [h("div", { class: "toolbar" }, h("a", { class: "btn icon ghost", href: "null://settings/content", html: icon("chevron").replace("<svg", '<svg style="transform:rotate(180deg)"') }), h("h1", { style: "margin:0" }, c.label)),
+    const out = [h("div", { class: "toolbar" }, h("a", { class: "btn icon ghost", title: "Back", "data-hint": "Return to all site settings", href: "null://settings/content", html: icon("chevron").replace("<svg", '<svg style="transform:rotate(180deg)"') }), h("h1", { style: "margin:0" }, c.label)),
       h("p", { class: "muted" }, c.desc + ". ", h("span", { class: "badge " + ecls }, elabel)), h("h2", {}, "Default behavior"), card(radios)];
     if (c.per_site) {
       const input = h("input", { type: "text", placeholder: "https://example.com", style: "width:260px" });
@@ -127,7 +129,7 @@
         h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => d.close() }, "Cancel"), h("button", { class: "btn primary", onclick: async () => { if (!n.value || !u.value.includes("%s")) return toast("Name and a URL containing %s are required"); await set("custom_engines", [...(S.custom_engines || []), { name: n.value, keyword: k.value, url: u.value }]); location.reload(); } }, "Save")));
       d.addEventListener("close", () => d.remove()); document.body.append(d); d.showModal();
     }
-    (S.custom_engines || []).forEach((e, i) => custom.append(h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, e.name), h("div", { class: "sub ellipsis" }, e.url)), h("span", { class: "badge" }, e.keyword || ""), h("button", { class: "btn icon ghost", html: icon("trash", "sm"), onclick: async () => { const l = S.custom_engines.slice(); l.splice(i, 1); await set("custom_engines", l); location.reload(); } }))));
+    (S.custom_engines || []).forEach((e, i) => custom.append(h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, e.name), h("div", { class: "sub ellipsis" }, e.url)), h("span", { class: "badge" }, e.keyword || ""), h("button", { class: "btn icon ghost", title: "Remove search engine", "data-hint": "Delete this custom engine", html: icon("trash", "sm"), onclick: async () => { const l = S.custom_engines.slice(); l.splice(i, 1); await set("custom_engines", l); location.reload(); } }))));
     custom.append(h("div", { class: "row" }, h("div", { class: "grow muted" }, "Add search engines with %s in place of the query"), h("button", { class: "btn", onclick: addEngine }, "Add")));
     return [h("h1", {}, "Search engine"),
       card(selectRow("Search engine used in the address bar", "Type @google, @null, @ddg, @bing or @brave followed by a query to pick one for a single search", engs.map(e => [e.id, e.name]), S.search_engine, v => set("search_engine", v)),

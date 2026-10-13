@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, searchbox, themebtn, snippet, favicon %}
+{% block title %}{{ q }} - Null Search{% endblock %}
+{% block body %}
+<div class="top">
+  <div class="row">
+    <a class="logo" href="/" title="Null Search home"><b>N</b><span>Null</span></a>
+    {{ searchbox(q, kind, False, safe, t) }}
+    <span class="grow"></span>
+    <a class="iconbtn" href="/index" title="Manage your local index" aria-label="Index">{{ icon("database") }}</a>
+    {{ themebtn() }}
+  </div>
+  <nav class="tabs" aria-label="Result types">
+    {% for k, label, ic in (("web", "All", "globe"), ("images", "Images", "image"), ("news", "News", "news")) %}
+    <a class="tab {{ 'on' if kind == k }}" href="/search?q={{ q|urlencode }}&kind={{ k }}{% if safe != 'moderate' %}&safe={{ safe }}{% endif %}" {% if kind == k %}aria-current="page"{% endif %}>{{ icon(ic, "sm") }}{{ label }}</a>
+    {% endfor %}
+    <form class="filters" action="/search" method="get" data-autosubmit>
+      <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="kind" value="{{ kind }}">
+      <select name="t" aria-label="Time range" title="Only show results from a recent period">
+        {% for v, l in (("", "Any time"), ("d", "Past day"), ("w", "Past week"), ("m", "Past month"), ("y", "Past year")) %}<option value="{{ v }}" {{ 'selected' if t == v }}>{{ l }}</option>{% endfor %}
+      </select>
+      <select name="safe" aria-label="SafeSearch" title="SafeSearch filters explicit results from providers">
+        {% for v, l in (("moderate", "SafeSearch: moderate"), ("strict", "SafeSearch: strict"), ("off", "SafeSearch: off")) %}<option value="{{ v }}" {{ 'selected' if safe == v }}>{{ l }}</option>{% endfor %}
+      </select>
+      <noscript><button class="btn" type="submit">Apply</button></noscript>
+    </form>
+  </nav>
+</div>
+
+<div class="wrap {{ 'single' if kind != 'web' or not (r.panel) }}">
+  <main>
+    {% if r.notice == "offline" %}
+      <div class="notice"><b>Can't reach the web search providers right now.</b> Check your connection; results from your local index (if any) are shown below.</div>
+    {% elif r.notice == "partial" %}
+      <div class="notice">Web providers didn't respond - showing results from your local index.</div>
+    {% elif r.notice == "offline-mode" %}
+      <div class="notice">Offline mode is on (NULL_SEARCH_OFFLINE=1): only your local index is searched.</div>
+    {% endif %}
+
+    {% if r.answer %}
+    <section class="card answer" aria-label="Instant answer">
+      <div class="lbl">{{ r.answer.title }}</div>
+      {% if r.answer.expr %}<div class="expr">{{ r.answer.expr }} =</div>{% endif %}
+      {% if r.answer.swatch %}<div class="sw"><svg width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Color swatch"><rect width="64" height="64" rx="14" fill="{{ r.answer.swatch }}" stroke="#8884" stroke-width="1"/></svg><div class="val">{{ r.answer.value }}</div></div>
+      {% else %}<div class="val {{ 'mono' if r.answer.mono }}">{{ r.answer.value }}</div>{% endif %}
+      {% if r.answer.detail %}<div class="detail">{{ r.answer.detail }}</div>{% endif %}
+    </section>
+    {% endif %}
+
+    {% if kind == "web" %}
+      {% if r.results %}
+        <p class="meta">{{ r.results|length }} result{{ "" if r.results|length == 1 else "s" }}{% if r.local_total %} · {{ r.local_total }} from your index{% endif %} · {{ r.took_ms }} ms</p>
+        {% for x in r.results %}
+        <article class="res">
+          <div class="site">{{ favicon(x.host) }}<span class="crumb">{{ x.crumb }}</span>
+            {% if x.local %}<span class="tag local" title="Found in your own local index">your index</span>{% endif %}
+            {% if x.sources|length > 1 %}<span class="tag multi" title="Found by: {{ x.sources|join(', ') }}">{{ x.sources|length }} sources</span>{% endif %}
+          </div>
+          <h3><a href="{{ x.url }}" rel="noopener noreferrer">{{ x.title }}</a></h3>
+          {% if x.snippet %}<p>{{ snippet(x.snippet) }}</p>{% endif %}
+        </article>
+        {% endfor %}
+        <div class="pager">
+          {% if page > 1 %}<a class="btn" href="/search?q={{ q|urlencode }}&page={{ page - 1 }}&safe={{ safe }}&t={{ t }}">Previous</a>{% endif %}
+          {% if r.has_next %}<a class="btn primary" href="/search?q={{ q|urlencode }}&page={{ page + 1 }}&safe={{ safe }}&t={{ t }}">Next page</a>{% endif %}
+        </div>
+      {% elif not r.answer %}
+        <div class="empty"><h2>No results for “{{ q }}”</h2>
+          <p>Try fewer or different keywords{% if not has_providers %}, or enable web providers (unset NULL_SEARCH_OFFLINE){% endif %}. You can also <a href="/index">add sites to your local index</a>.</p></div>
+      {% endif %}
+
+    {% elif kind == "images" %}
+      {% if r.results %}
+        <p class="meta">{{ r.results|length }} images · {{ r.took_ms }} ms</p>
+        <div class="grid">
+          {% for x in r.results %}
+          <a class="tile" href="{{ x.url }}" rel="noopener noreferrer" title="{{ x.title }}">
+            <div class="ph"><img src="/api/img?u={{ (x.thumb or x.image)|urlencode }}" alt="{{ x.title }}" loading="lazy" {% if x.width and x.height %}width="{{ x.width }}" height="{{ x.height }}"{% endif %} data-hide-on-error></div>
+            <div class="cap"><b>{{ x.title or x.host }}</b>{{ x.publisher or x.host }}{% if x.width %} · {{ x.width }}×{{ x.height }}{% endif %}</div>
+          </a>
+          {% endfor %}
+        </div>
+        <div class="pager">
+          {% if page > 1 %}<a class="btn" href="/search?q={{ q|urlencode }}&kind=images&page={{ page - 1 }}&safe={{ safe }}">Previous</a>{% endif %}
+          <a class="btn primary" href="/search?q={{ q|urlencode }}&kind=images&page={{ page + 1 }}&safe={{ safe }}">Next page</a>
+        </div>
+      {% else %}
+        <div class="empty"><h2>No images found</h2><p>Image results come from Openverse, Wikimedia Commons and any keyed provider you've configured.</p></div>
+      {% endif %}
+
+    {% else %}
+      {% if r.results %}
+        <p class="meta">{{ r.results|length }} stories · {{ r.took_ms }} ms</p>
+        {% for x in r.results %}
+        <article class="news">
+          <div class="t"><div class="by">{{ x.publisher or x.host }}{% if x.published %} · {{ x.published|ago }}{% endif %}</div>
+            <h3><a href="{{ x.url }}" rel="noopener noreferrer">{{ x.title }}</a></h3>
+            {% if x.snippet %}<p class="by">{{ snippet(x.snippet) }}</p>{% endif %}</div>
+          {% if x.thumb %}<img src="/api/img?u={{ x.thumb|urlencode }}" alt="" loading="lazy" data-hide-on-error>{% endif %}
+        </article>
+        {% endfor %}
+      {% else %}
+        <div class="empty"><h2>No news found</h2><p>Try different keywords or a wider time range.</p></div>
+      {% endif %}
+    {% endif %}
+  </main>
+
+  {% if kind == "web" and r.panel %}
+  <aside class="side">
+    <section class="card panel" aria-label="About {{ r.panel.title }}">
+      {% if r.panel.thumb %}<img class="pimg" src="/api/img?u={{ r.panel.thumb|urlencode }}" alt="" data-hide-on-error>{% endif %}
+      <h2>{{ r.panel.title }}</h2>
+      {% if r.panel.description %}<div class="desc">{{ r.panel.description }}</div>{% endif %}
+      <p>{{ r.panel.extract }}</p>
+      {% if r.panel.url %}<div class="src"><a href="{{ r.panel.url }}" rel="noopener noreferrer">Read more on Wikipedia</a></div>{% endif %}
+    </section>
+  </aside>
+  {% endif %}
+</div>
+<div class="foot">Null Search v{{ version }} · queries are never stored · <a href="/index">Local index</a></div>
+{% endblock %}

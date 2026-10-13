@@ -13,15 +13,31 @@ permissions, ad blocking, error handling, notifications, the search link) is Nul
 | OS | Run |
 |---|---|
 | Windows | double-click **`setup_and_run.bat`** (first run: creates `.venv`, installs dependencies, starts the browser). Afterwards use **`run_browser.bat`**. |
-| macOS / Linux | `./setup_and_run.sh` the first time, then `./run_browser.sh` |
+| macOS / Linux | `python3 -m venv .venv && . .venv/bin/activate && pip install -r "Search_Engine/Null Browser/requirements.txt" -r "Search_Engine/Null Search Engine/requirements.txt" && python "Search_Engine/Null Browser/main.py"` |
 
 Needs Python 3.10 or newer (3.12 / 3.13 recommended) and an internet connection for the first install. Setup installs prebuilt
 packages only (nothing is compiled, so locked-down PCs work), and Null Search is optional: if its packages can't install,
 setup counts a warning and the browser still starts. If something misbehaves, run
-`run_browser_debug.bat` for a console with verbose logging.
+`python main.py --debug` (in `Search_Engine/Null Browser`) for verbose logging.
 
 Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--debug] [--new-instance]`.
 `--data-dir` gives a portable profile.
+
+## What's new in this version
+
+- **Chrome-style window.** The title bar and tab strip are one: `[tab ×] [tab ×] [+]  …  [–] [▢] [✕]`. Drag the empty strip to move the window,
+  double-click it to maximise, drag the edges to resize (Snap layouts and Aero-snap still work through the system move / resize).
+- **Tab tear-off.** Drag a tab out of the strip and it becomes its own window that follows the cursor; drop it on another browser window's tab
+  strip (a purple insertion marker shows where) to merge it back. Also *Move tab to new window* in the tab menu. Dragging the only tab moves the window.
+- **Hover hints everywhere.** Every toolbar button, tab button, menu item and every control on the built-in pages has a tooltip with a name,
+  the keyboard shortcut and a one-line suggestion.
+- **Feather icons** (MIT, © Cole Bemis, https://feathericons.com) used consistently in the Qt UI and the built-in pages. Settings now has a proper gear; the sun is only the theme button.
+- **Customisable New Tab** (`null://newtab`, *Customize* button): background (colour, gradient, or your own image), clock, greeting, search box style, shortcut grid
+  (add / edit / remove / reorder, top sites), compact / glass cards. Saved in your profile.
+- **Sign-ins are kept.** Cookies, local storage and site data persist across restarts until *you* clear them. *Clear browsing data* offers the
+  Chrome time-range list and ticks only *Cached images and files* by default; cookies and site data are removed only when you tick them. (Settings → Privacy has a switch if you prefer memory-only cookies.)
+- **Fixed:** `Unsafe attempt to load URL null://newtab/ … Domains, protocols and ports must match` in DevTools (the internal scheme no longer uses an opaque local origin).
+- **Null Search rebuilt** — see below.
 
 ## What you get
 
@@ -49,13 +65,15 @@ notifications you allowed, native print dialog, theme follows the OS dark-mode s
 
 ## Search: Google, linked with Null Search
 
-Google is the default address-bar engine. Null Search (`Null Search Engine/`, the FastAPI project you already had)
-is linked in:
+Google is the default address-bar engine. Null Search (`Search_Engine/Null Search Engine/`, see its own README) is linked in:
 
 - The browser starts it in the background on launch and stops it on exit (Settings → Search engine → start / stop / port).
 - Type **`@null query`** to use it for one search, **`@google`**, **`@ddg`**, **`@bing`**, **`@brave`** likewise, or pick any of them as the default. Add your own engine with `%s`.
-- *Index my bookmarks in Null Search* crawls your bookmarked pages into its index.
-- Null Search is optional. If it is stopped or unavailable, normal browsing and other search engines continue working; searches that would have used Null Search fall back to Google. The New Tab page and Settings show its status.
+- *Index my bookmarks in Null Search* crawls your bookmarked pages into its local index.
+- Null Search is now a meta-search engine plus a personal full-text index (SQLite FTS5 / BM25): web results from DuckDuckGo and Wikipedia
+  (optionally Brave, Google or SearxNG) fused with Reciprocal Rank Fusion, instant answers (calculator, units, time, colours, hashes), a Wikipedia knowledge panel,
+  Images and News tabs, search operators, a polite SSRF-safe crawler, and a UI with dark mode. It is honest about its limits: it does not own a web-scale crawl.
+- Null Search is optional. If it is stopped or unavailable, normal browsing and other search engines continue working; searches that would have used Null Search fall back to Google.
 
 ## Site permissions
 
@@ -90,11 +108,12 @@ a security boundary against deliberately hostile code. It is off in safe mode.
 `python main.py --selftest OUTDIR` launches the whole browser headless and runs 60+ end-to-end checks (internal pages render
 with no JS errors, address-bar parsing, every shim gate with real prompts, permission persistence, ad blocking, pop-up
 blocking, API-token protection, bookmarks, history, error pages, clean shutdown) and saves screenshots.
-It runs against a throw-away profile; the last run in the Linux build environment passed 63 of 63 checks (2 more were skipped because they
-need a real display or network).
+It runs against a throw-away profile; the last run in the Linux build environment passed 67 of 67 checks. Tab tear-off / merge, persistence of
+cookies across restarts and the Clear-data semantics were verified with separate scripted runs (synthetic mouse events in an offscreen display, so real-mouse feel on Windows is untested).
+The search engine has its own 64 pytest tests (`Null Search Engine/tests`).
 
 **Not tested:** Windows and macOS. The code uses only cross-platform Qt APIs plus guarded Windows calls (taskbar ID, dark title
-bar), but nobody has run it there yet. If the first launch fails, `run_browser_debug.bat` output and `logs/null-browser.log` will show why.
+bar), but nobody has run it there yet. If the first launch fails, the output of `python main.py --debug` and `logs/null-browser.log` will show why.
 
 ## Known limits
 
@@ -113,8 +132,8 @@ Search_Engine/
     null_browser/
       main.py  app.py        start-up, profiles, policies, session, tray
       core/                  db, settings, permissions, adblock, downloads, search, engine_service, notify, crash
-      ui/                    window, tab, tabbar, omnibox, popups, theme, icons, native
+      ui/                    window, tab, tabbar, tabdrag, omnibox, popups, tips, theme, icons, native
       web/                   null:// scheme handler, JSON API, pages/ and static/ for the built-in pages
       selftest.py            headless end-to-end test
-  Null Search Engine/        FastAPI + TF-IDF index + crawler (unchanged apart from a configurable port)
+  Null Search Engine/        FastAPI meta-search + FTS5 index + crawler + UI (see its README)
 ```

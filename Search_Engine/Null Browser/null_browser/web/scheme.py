@@ -36,6 +36,7 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline';
 # null:// pages (cross-origin), so it can never learn it - this does not depend on how Chromium serialises the
 # origin of a custom scheme (which is opaque, i.e. "null").
 API_TOKEN = secrets.token_urlsafe(24)
+MAX_BODY = 12_000                      # bytes: largest single API request body (bigger payloads are sent in chunks)
 FOREIGN_SCHEMES = {"http", "https", "file", "ftp", "ws", "wss", "data", "blob", "filesystem", "view-source"}
 
 mimetypes.add_type("text/javascript", ".js")
@@ -47,9 +48,8 @@ def register_scheme():
     scheme = QWebEngineUrlScheme(SCHEME.encode())
     scheme.setSyntax(QWebEngineUrlScheme.Syntax.Host)
     scheme.setDefaultPort(QWebEngineUrlScheme.SpecialPort.PortUnspecified.value)
-    scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme | QWebEngineUrlScheme.Flag.LocalScheme
-                    | QWebEngineUrlScheme.Flag.LocalAccessAllowed | QWebEngineUrlScheme.Flag.FetchApiAllowed
-                    | QWebEngineUrlScheme.Flag.ViewSourceAllowed)
+    scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme
+                    | QWebEngineUrlScheme.Flag.FetchApiAllowed | QWebEngineUrlScheme.Flag.ViewSourceAllowed)
     QWebEngineUrlScheme.registerScheme(scheme)
 
 
@@ -100,7 +100,9 @@ class NullSchemeHandler(QWebEngineUrlSchemeHandler):
         if path.startswith("/_/"):
             name = path[3:]
             if name == "favicon":
-                return self._favicon(job, query.get("u", ""))
+                return self._favicon(job, query.get("u", ""), strict=query.get("strict") == "1")
+            if name == "bg":
+                return self._newtab_bg(job)
             safe = os.path.normpath(name)
             if safe.startswith("..") or os.path.isabs(safe):
                 return job.fail(QWebEngineUrlRequestJob.Error.UrlInvalid)
@@ -117,7 +119,7 @@ class NullSchemeHandler(QWebEngineUrlSchemeHandler):
     def _not_found(self, url):
         from urllib.parse import quote
         target = f"{SCHEME}://error?kind=net&code=ERR_FILE_NOT_FOUND&u={quote(url, safe='')}"
-        return f'<!doctype html><meta charset="utf-8"><title>Not found</title><body><script src="/_/ui.js"></script><script>location.replace({json.dumps(target)})</script>'
+        return f'<!doctype html><meta charset="utf-8"><title>Not found</title><body><script src="/_/icons.js"></script><script src="/_/ui.js"></script><script>location.replace({json.dumps(target)})</script>'
 
     def _render(self, page, title):
         s = self.app.settings
@@ -127,11 +129,21 @@ class NullSchemeHandler(QWebEngineUrlSchemeHandler):
                 .replace("{{accent_contrast}}", _contrast(accent)).replace("{{page}}", page).replace("{{title}}", title)
                 .replace("{{token}}", API_TOKEN))
 
-    def _favicon(self, job, u):
+    def _newtab_bg(self, job):
+        found = api_mod.newtab_bg_file()
+        if not found:
+            return job.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
+        path, mime = found
+        with open(path, "rb") as f:
+            return self._reply(job, f.read(), mime, extra={"Cache-Control": "no-store"})
+
+    def _favicon(self, job, u, strict=False):
         host = QUrl(u).host() or ""
         png = self.app.db.favicon(host) if host else None
         if png:
             return self._reply(job, bytes(png), "image/png", extra={"Cache-Control": "max-age=300"})
+        if strict:                                           # caller draws its own fallback (e.g. a letter avatar)
+            return job.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
         svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#9a9db3" stroke-width="1.6">'
                '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>')
         self._reply(job, svg.encode(), "image/svg+xml")
@@ -152,6 +164,12 @@ class NullSchemeHandler(QWebEngineUrlSchemeHandler):
         if job.requestMethod() == b"POST":
             body = job.requestBody()
             if body is not None:
+                # NOTE: a blocking readAll() only works while the whole body fits in the first network chunk (~16 KB);
+                # anything larger deadlocks the UI thread. Pages therefore split big payloads (see api() in ui.js and
+                # the blob/put route), and we refuse anything that announces a larger body instead of freezing.
+                for k, v in job.requestHeaders().items():
+                    if bytes(k).lower() == b"content-length" and int(bytes(v) or 0) > MAX_BODY:
+                        return self._reply(job, b'{"error":"Request too large"}', "application/json", 413)
                 try:
                     body.open(QIODevice.OpenModeFlag.ReadOnly)
                     raw = bytes(body.readAll())
@@ -159,6 +177,9 @@ class NullSchemeHandler(QWebEngineUrlSchemeHandler):
                         params.update(json.loads(raw.decode("utf-8")))
                 except (ValueError, UnicodeDecodeError):
                     return self._reply(job, b'{"error":"Invalid JSON"}', "application/json", 400)
+        return self._run_api(job, name, params)
+
+    def _run_api(self, job, name, params):
         try:
             result = api_mod.dispatch(self.app, name, params, private=self.private)
             return self._reply(job, json.dumps(result, default=str).encode(), "application/json")

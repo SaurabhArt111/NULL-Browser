@@ -1,7 +1,10 @@
 """JSON API behind the null:// pages. Every handler is (app, params, private) -> JSON-able."""
+import base64
+import glob
 import html as H
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -29,11 +32,41 @@ def route(name):
     return deco
 
 
+BLOBS = {}                                  # id -> {"parts": {i: str}, "n": int, "t": time}; large request bodies arrive in pieces
+BLOB_LIMIT = 40_000_000
+
+
 def dispatch(app, name, params, private=False):
     fn = ROUTES.get(name)
     if not fn:
         raise ApiError(f"Unknown API: {name}")
+    if params.get("_blob"):                                    # payload that was uploaded in pieces via blob/put
+        entry = BLOBS.pop(str(params["_blob"]), None)
+        if not entry or len(entry["parts"]) != entry["n"]:
+            raise ApiError("Upload incomplete")
+        try:
+            params = json.loads("".join(entry["parts"][i] for i in range(entry["n"])))
+        except (ValueError, KeyError):
+            raise ApiError("Upload corrupted")
     return fn(app, params, private)
+
+
+@route("blob/put")
+def blob_put(app, p, private):
+    import time
+    _need(p, "id", "i", "n", "data")
+    now = time.time()
+    for k in [k for k, v in BLOBS.items() if now - v["t"] > 300]:       # forget abandoned uploads
+        BLOBS.pop(k, None)
+    n, i = int(p["n"]), int(p["i"])
+    if not (0 <= i < n <= 4000) or not isinstance(p["data"], str) or len(p["data"]) > 12_000:
+        raise ApiError("Bad upload piece")
+    e = BLOBS.setdefault(str(p["id"]), {"parts": {}, "n": n, "t": now})
+    e["parts"][i] = p["data"]
+    if sum(len(x) for v in BLOBS.values() for x in v["parts"].values()) > BLOB_LIMIT:
+        BLOBS.clear()
+        raise ApiError("Upload too large")
+    return {"ok": True}
 
 
 def _need(p, *keys):
@@ -262,7 +295,60 @@ def newtab_data(app, p, private):
                 top.append(r)
     bars = [] if private else app.db.bookmarks("Bookmarks bar")[:10]
     return {"engines": app.search.engines(), "engine": app.search.current()["id"], "top": top[:10],
-            "bookmarks": bars, "null_search": app.engine.info(), "private": private}
+            "bookmarks": bars, "null_search": app.engine.info(), "private": private,
+            "newtab": app.settings.get("newtab") or {}, "has_bg": bool(newtab_bg_file())}
+
+
+# New Tab page background image (uploaded by the user, stored next to settings.json, never leaves the computer)
+BG_TYPES = {".jpg": ("image/jpeg", b"\xff\xd8\xff"), ".png": ("image/png", b"\x89PNG\r\n\x1a\n"), ".webp": ("image/webp", b"RIFF"),
+            ".gif": ("image/gif", b"GIF8")}
+
+
+def _bg_dir():
+    from ..core import paths
+    return paths.sub("newtab")
+
+
+def newtab_bg_file():
+    for ext, (mime, _magic) in BG_TYPES.items():
+        p = os.path.join(_bg_dir(), "bg" + ext)
+        if os.path.isfile(p):
+            return p, mime
+    return None
+
+
+def _drop_bg():
+    for p in glob.glob(os.path.join(_bg_dir(), "bg.*")):
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
+
+@route("newtab/set_bg")
+def newtab_set_bg(app, p, private):
+    m = re.match(r"^data:image/(jpeg|png|webp|gif);base64,([A-Za-z0-9+/=\s]+)$", p.get("data") or "")
+    if not m:
+        raise ApiError("Unsupported image")
+    if len(m.group(2)) > 14_000_000:
+        raise ApiError("That image is too large (limit about 10 MB)")
+    try:
+        raw = base64.b64decode(m.group(2), validate=False)
+    except ValueError:
+        raise ApiError("Unreadable image")
+    ext = ".jpg" if m.group(1) == "jpeg" else "." + m.group(1)
+    if not raw.startswith(BG_TYPES[ext][1]):
+        raise ApiError("That file is not a valid image")
+    _drop_bg()
+    with open(os.path.join(_bg_dir(), "bg" + ext), "wb") as f:
+        f.write(raw)
+    return {"ok": True}
+
+
+@route("newtab/clear_bg")
+def newtab_clear_bg(app, p, private):
+    _drop_bg()
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------ adblock
@@ -315,8 +401,9 @@ def engine_index_bookmarks(app, p, private):
         return {"message": "You have no bookmarks to index yet."}
     if app.engine.state not in ("running", "external"):
         return {"message": "Start Null Search first (Server status -> Start)."}
-    body = json.dumps({"seeds": urls[:50], "max_pages": min(500, 5 * len(urls)), "same_domain_only": True}).encode()
-    req = urllib.request.Request(f"http://127.0.0.1:{app.engine.port}/api/crawl", data=body, headers={"Content-Type": "application/json"})
+    body = json.dumps({"urls": urls[:50], "max_pages": min(500, 5 * len(urls)), "depth": 1, "same_site": True}).encode()
+    req = urllib.request.Request(f"http://127.0.0.1:{app.engine.port}/api/crawl", data=body,
+                                 headers={"Content-Type": "application/json", "X-Null-Search": "1"})
     try:
         with urllib.request.urlopen(req, timeout=4):
             pass

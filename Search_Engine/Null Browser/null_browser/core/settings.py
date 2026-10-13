@@ -37,6 +37,7 @@ DEFAULTS = {
     "send_dnt": True,
     "https_first": True,
     "clear_on_exit": [],               # subset of: history, cookies, cache, downloads
+    "save_site_data": True,            # True (default): cookies, logins and site storage are kept until the user clears them; False = memory only
     # downloads
     "download_dir": "",
     "ask_download_location": False,
@@ -58,10 +59,11 @@ DEFAULTS = {
     # permissions: global defaults (feature -> value), see permissions.py
     "permission_defaults": {},
     "profile_name": "You",
+    "newtab": {},                      # New Tab page customisation (background, shortcuts, layout) - see web/static/newtab.js
     "last_version": "",
 }
 
-RESTART_KEYS = {"hardware_acceleration", "remote_debugging_port"}
+RESTART_KEYS = {"hardware_acceleration", "remote_debugging_port", "save_site_data"}
 
 
 class Settings(QObject):

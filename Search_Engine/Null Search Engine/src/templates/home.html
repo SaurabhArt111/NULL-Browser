@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, searchbox, themebtn %}
+{% block bodyclass %}home{% endblock %}
+{% block body %}
+<div class="home">
+  <header>
+    <a class="iconbtn" href="/index" title="Manage your local index: add sites, crawl, remove pages" aria-label="Index">{{ icon("database") }}</a>
+    {{ themebtn() }}
+  </header>
+  <main>
+    <div class="hero">
+      <div class="mark" aria-hidden="true">N</div>
+      <h1>Null Search</h1>
+      <p>Private by design. No tracking, no profile, no ads.</p>
+    </div>
+    {{ searchbox(autofocus=True) }}
+    <div class="examples">
+      {% for e in answer_examples %}<a class="chip" href="/search?q={{ e|urlencode }}" title="Try this instant answer">{{ e }}</a>{% endfor %}
+      <a class="chip" href="/search?q=site%3Awikipedia.org+search+engine" title="Operators: site:, intitle:, inurl:, filetype:, &quot;phrase&quot;, -exclude">site:wikipedia.org …</a>
+    </div>
+  </main>
+  <footer>{{ "{:,}".format(docs) }} page{{ "" if docs == 1 else "s" }} in your local index · <a href="/index">Add sites</a> · v{{ version }}</footer>
+</div>
+{% endblock %}

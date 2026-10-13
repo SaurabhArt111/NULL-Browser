@@ -81,3 +81,10 @@ code, pre { font-family: "Cascadia Code", Consolas, monospace; font-size: 12.5px
 pre { background: var(--surface-2); padding: 12px; border-radius: 10px; overflow: auto; max-height: 340px; white-space: pre-wrap; }
 table.kv { width: 100%; border-collapse: collapse; } table.kv td { padding: 9px 18px; border-bottom: 1px solid var(--border); vertical-align: top; } table.kv td:first-child { color: var(--muted); width: 220px; }
 @media (max-width: 820px) { .sidebar { display: none; } .content { padding: 16px; } }
+
+.tip { position: fixed; z-index: 1000; max-width: 280px; padding: 7px 11px; border-radius: 8px; background: #22232d; color: #fff; font-size: 12.5px; line-height: 1.4; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,.28); animation: tipin .12s ease-out; }
+:root[data-theme="dark"] .tip { background: #ebecf4; color: #14151c; }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] .tip { background: #ebecf4; color: #14151c; } }
+.tip[hidden] { display: none; } .tip b { font-weight: 600; } .tip div { opacity: .8; margin-top: 2px; }
+.tip kbd { font: inherit; font-size: 11px; opacity: .7; margin-left: 8px; padding: 0 5px; border: 1px solid currentColor; border-radius: 4px; }
+@keyframes tipin { from { opacity: 0; transform: translateY(2px); } }

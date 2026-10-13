@@ -17,6 +17,7 @@ from ..constants import SCHEME
 from ..core import crash
 from ..core.permissions import ASK_PREFIX, BY_ID, PROMPT_VERBS, QT_PERMISSION_MAP, origin_of
 from . import icons
+from .tips import tip
 
 log = logging.getLogger("null.tab")
 WA = QWebEngineSettings.WebAttribute
@@ -694,7 +695,7 @@ class Tab(QWidget):
             close = QToolButton(header)
             close.setObjectName("devtoolsClose")
             close.setText("\u2715")
-            close.setToolTip("Close developer tools")
+            tip(close, "Close developer tools", "Hide the panel", "F12")
             close.clicked.connect(self.close_devtools)
             header_layout.addWidget(label)
             header_layout.addStretch(1)
@@ -781,8 +782,10 @@ class FindBar(QFrame):
         self.count = QLabel("")
         self.count.setMinimumWidth(52)
         self.prev, self.next, self.close_btn = QToolButton(), QToolButton(), QToolButton()
-        for b, name, tip in ((self.prev, "up", "Previous (Shift+Enter)"), (self.next, "down", "Next (Enter)"), (self.close_btn, "close", "Close (Esc)")):
-            b.setToolTip(tip)
+        for b, name, (t, hint, key) in ((self.prev, "up", ("Previous match", "Jump to the match before this one", "Shift+Enter")),
+                                        (self.next, "down", ("Next match", "Jump to the next match", "Enter")),
+                                        (self.close_btn, "close", ("Close find bar", "Stop searching this page", "Esc"))):
+            tip(b, t, hint, key)
             b.setProperty("iconname", name)
         for w in (self.edit, self.count, self.prev, self.next, self.close_btn):
             lay.addWidget(w)
@@ -862,6 +865,9 @@ class PermissionBubble(QFrame):
         self.btn_allow = QPushButton("Allow while visiting the site")
         self.btn_once = QPushButton("Allow this time")
         self.btn_deny = QPushButton("Don't allow")
+        tip(self.btn_allow, "Allow while visiting", "Remember this choice for the site")
+        tip(self.btn_once, "Allow this time", "Only for this visit; you will be asked again next time")
+        tip(self.btn_deny, "Don't allow", "Block this request and remember the choice")
         self.btn_allow.setObjectName("primary")
         for w in (self.title, self.sub, self.btn_allow, self.btn_once, self.btn_deny):
             lay.addWidget(w)

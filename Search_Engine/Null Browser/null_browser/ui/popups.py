@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout,
 
 from ..constants import SCHEME
 from ..core.permissions import BY_ID, origin_of
+from . import tips
 
 log = logging.getLogger("null.popups")
 SITE_FEATURES = ["location", "camera", "microphone", "notifications", "clipboard", "javascript", "images", "cookies", "popups",
@@ -121,9 +122,11 @@ class SiteInfoPopup(Anchored):
             lay.addWidget(area)
             btns = QHBoxLayout()
             reset = QPushButton("Reset permissions")
+            tips.tip(reset, "Reset permissions", "Forget every choice you made for this site")
             reset.clicked.connect(self._reset)
             more = QPushButton("Site settings")
             more.setObjectName("linkbtn")
+            tips.tip(more, "Site settings", "Open the full list of permissions for all sites")
             more.clicked.connect(lambda: (self.close(), win.open_url(f"{SCHEME}://settings/content", new_tab=True)))
             btns.addWidget(reset)
             btns.addStretch(1)
@@ -183,9 +186,11 @@ class DownloadsPopup(Anchored):
             head.addWidget(QLabel("<b style='font-size:14px'>Downloads</b>"), 1)
             clear = QPushButton("Clear")
             clear.setObjectName("linkbtn")
+            tips.tip(clear, "Clear list", "Remove finished downloads from this list (files stay on disk)")
             clear.clicked.connect(self.app.downloads.clear_finished)
             full = QPushButton("Show all")
             full.setObjectName("linkbtn")
+            tips.tip(full, "Show all downloads", "Open the full downloads page", "Ctrl+J")
             full.clicked.connect(lambda: (self.close(), self.win.open_url(f"{SCHEME}://downloads", new_tab=True)))
             head.addWidget(clear)
             head.addWidget(full)
@@ -236,20 +241,20 @@ class DownloadsPopup(Anchored):
         h.addLayout(col, 1)
         did = d["id"]
 
-        def btn(icon, tip, fn):
+        def btn(icon, tip, fn, hint=""):
             b = QToolButton()
             b.setIcon(self.win.icon(icon, size=16))
-            b.setToolTip(tip)
+            tips.tip(b, tip, hint)
             b.clicked.connect(lambda: fn(did))
             h.addWidget(b)
         dm = self.app.downloads
         if state == "in_progress":
-            btn("stop", "Cancel", dm.cancel)
+            btn("stop", "Cancel download", dm.cancel, "Stop this download and discard the partial file")
         else:
             if state == "completed" and d.get("exists"):
-                btn("external", "Open", dm.open_file)
+                btn("external", "Open file", dm.open_file, "Open the downloaded file with its default app")
             if d.get("path"):
-                btn("folder", "Show in folder", dm.show)
+                btn("folder", "Show in folder", dm.show, "Reveal the file in your file manager")
         return w
 
 
@@ -278,9 +283,11 @@ class BookmarkEditor(QDialog):
         lay.addLayout(form)
         row = QHBoxLayout()
         rm = QPushButton("Remove")
+        tips.tip(rm, "Remove bookmark", "Delete this bookmark")
         rm.clicked.connect(self._remove)
         done = QPushButton("Done")
         done.setDefault(True)
+        tips.tip(done, "Done", "Save the name and folder")
         done.clicked.connect(self._done)
         row.addWidget(rm)
         row.addStretch(1)
@@ -325,6 +332,7 @@ class InfoBar(QFrame):
             h.addWidget(b)
         x = QToolButton()
         x.setText("×")
+        tips.tip(x, "Dismiss", "Hide this message")
         x.clicked.connect(self.dismiss)
         h.addWidget(x)
         self._on_close = on_close

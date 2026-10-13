@@ -5,9 +5,9 @@ import re
 import time
 from urllib.parse import urlsplit
 
-from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon, QImage, QKeySequence, QPixmap
-from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QMenu, QMessageBox, QProgressBar, QSizePolicy, QStackedWidget,
+from PyQt6.QtCore import QPoint, QRect, QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QAction, QActionGroup, QCursor, QDesktopServices, QIcon, QImage, QKeySequence, QPixmap
+from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu, QMessageBox, QProgressBar, QSizePolicy, QStackedWidget,
                              QToolButton, QVBoxLayout, QWidget, QWidgetAction, QApplication)
 
 from ..constants import APP_NAME, SCHEME
@@ -17,7 +17,8 @@ from . import icons, native, theme
 from .omnibox import Omnibox
 from .popups import BookmarkEditor, DownloadsPopup, InfoBar, SiteInfoPopup
 from .tab import Tab
-from .tabbar import TabStrip
+from .tabbar import TabStrip, TitleStrip, WindowControls
+from .tips import tip, tip_html
 
 log = logging.getLogger("null.window")
 
@@ -48,6 +49,13 @@ class MainWindow(QMainWindow):
         self.resize(1280, 840)
         self.setMinimumSize(520, 360)
         self.setAcceptDrops(True)
+        # Merged title bar: the OS caption is removed and the tab strip + window buttons do its job (like Chrome).
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowMinimizeButtonHint
+                            | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowSystemMenuHint)
+        self.setMouseTracking(True)
+        self._resize_edges = Qt.Edge(0)
+        self._hint = None
+        self._update_border()
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -55,13 +63,18 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
 
-        # --- tab strip -------------------------------------------------------------------
-        self.strip = QWidget()
-        self.strip.setObjectName("tabstrip")
+        # --- merged title bar: [v][tab][tab][+] ......drag area...... [-][o][x] ----------------------------
+        self.strip = TitleStrip(self)
         sh = QHBoxLayout(self.strip)
-        sh.setContentsMargins(8, 0, 8, 0)
+        sh.setContentsMargins(6, 0, 0, 0)
         sh.setSpacing(0)
+        self.tabsearch_btn = QToolButton()
+        self.tabsearch_btn.setObjectName("tabsearch")
+        self.tabsearch_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tip(self.tabsearch_btn, "Search tabs", "See and jump to any open tab", "Ctrl+Shift+A")
+        self.tabsearch_btn.clicked.connect(self.tab_search_menu)
         self.tabbar = TabStrip(self)
+        self.tabbar.reserved = 330
         self.tabbar.currentChanged.connect(self._current_changed)
         self.tabbar.tabMoved.connect(self._tab_moved)
         self.tabbar.closeRequested.connect(self.close_tab_index)
@@ -70,16 +83,25 @@ class MainWindow(QMainWindow):
         self.tabbar.audioToggled.connect(self._toggle_mute_index)
         self.newtab_btn = QToolButton()
         self.newtab_btn.setObjectName("newtab")
-        self.newtab_btn.setToolTip("New tab (Ctrl+T)")
+        self.newtab_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tip(self.newtab_btn, "New tab", "Open a blank tab", "Ctrl+T")
         self.newtab_btn.clicked.connect(lambda: self.new_tab())
         self.private_badge = QLabel("InPrivate")
         self.private_badge.setObjectName("privatebadge")
         self.private_badge.setVisible(private)
+        tip(self.private_badge, "InPrivate window", "History, cookies and site data from this window are not saved")
+        self.wc = WindowControls(self)
+        sh.addWidget(self.tabsearch_btn, 0, Qt.AlignmentFlag.AlignTop)
         sh.addWidget(self.tabbar)
-        sh.addWidget(self.newtab_btn)
+        sh.addWidget(self.newtab_btn, 0, Qt.AlignmentFlag.AlignTop)
         sh.addStretch(1)
-        sh.addWidget(self.private_badge)
+        sh.addWidget(self.private_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        sh.addSpacing(8)
+        sh.addWidget(self.wc, 0, Qt.AlignmentFlag.AlignTop)
         v.addWidget(self.strip)
+        self._drop_hint = QFrame(self.strip)
+        self._drop_hint.setObjectName("drophint")
+        self._drop_hint.hide()
 
         # --- toolbar ---------------------------------------------------------------------
         self.toolbar = QWidget()
@@ -88,10 +110,10 @@ class MainWindow(QMainWindow):
         th.setContentsMargins(8, 4, 8, 4)
         th.setSpacing(2)
         mk = lambda tip, fn: self._tbtn(tip, fn)
-        self.back_btn = mk("Back (Alt+Left)", lambda: self.cur_do("back"))
-        self.fwd_btn = mk("Forward (Alt+Right)", lambda: self.cur_do("forward"))
-        self.reload_btn = mk("Reload (Ctrl+R)", self.reload_or_stop)
-        self.home_btn = mk("Home (Alt+Home)", self.go_home)
+        self.back_btn = mk(("Back", "Go to the previous page", "Alt+Left"), lambda: self.cur_do("back"))
+        self.fwd_btn = mk(("Forward", "Go to the next page", "Alt+Right"), lambda: self.cur_do("forward"))
+        self.reload_btn = mk(("Reload", "Load this page again", "Ctrl+R"), self.reload_or_stop)
+        self.home_btn = mk(("Home", "Open your home page", "Alt+Home"), self.go_home)
         self.omni = Omnibox(self)
         self.omni.navigate.connect(self.navigate_text)
         self.omni.securityClicked.connect(self.show_site_info)
@@ -100,9 +122,9 @@ class MainWindow(QMainWindow):
         self.omni.popup_chip.clicked.connect(self._popup_menu)
         self.omni.zoom_chip.clicked.connect(self._zoom_menu)
         self.omni.shield_chip.clicked.connect(self._shield_menu)
-        self.dl_btn = mk("Downloads (Ctrl+J)", self.show_downloads_popup)
+        self.dl_btn = mk(("Downloads", "See files you have downloaded", "Ctrl+J"), self.show_downloads_popup)
         self.dl_btn.hide()
-        self.menu_btn = mk("Customize and control Null Browser", self.show_main_menu)
+        self.menu_btn = mk(("Menu", "Customize and control Null Browser: history, bookmarks, settings and more"), self.show_main_menu)
         for w in (self.back_btn, self.fwd_btn, self.reload_btn, self.home_btn):
             th.addWidget(w)
         th.addSpacing(4)
@@ -154,9 +176,10 @@ class MainWindow(QMainWindow):
     def icon(self, name, color=None, size=20):
         return self.app.icon(name, color=color, size=size, private=self.private)
 
-    def _tbtn(self, tip, fn):
+    def _tbtn(self, tipspec, fn):
         b = QToolButton()
-        b.setToolTip(tip)
+        tip(b, *tipspec)
+        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setIconSize(QSize(20, 20))
         b.setFixedSize(34, 34)
         b.clicked.connect(lambda *_: crash.guarded(fn)())
@@ -237,6 +260,9 @@ class MainWindow(QMainWindow):
         self._set_reload_icon(False)
         self.newtab_btn.setIcon(self.icon("plus", size=18))
         self.newtab_btn.setIconSize(QSize(16, 16))
+        self.tabsearch_btn.setIcon(self.icon("tab_search", size=16))
+        self.tabsearch_btn.setIconSize(QSize(14, 14))
+        self.wc.refresh()
         self.omni.restyle()
         self.tabbar.restyle()
         for t in self.tabs:
@@ -373,7 +399,7 @@ class MainWindow(QMainWindow):
         title = tab.title()
         self.tabbar.setTabText(i, "" if tab.pinned else title)
         pre = "💤 " if tab.discarded else ""
-        self.tabbar.setTabToolTip(i, f"{pre}{title}\n{display_url(tab.real_url().toString())}")
+        self.tabbar.setTabToolTip(i, tip_html(f"{pre}{title}", display_url(tab.real_url().toString())))
         if tab is self.current():
             self.setWindowTitle(f"{title} - {APP_NAME}" + (" (InPrivate)" if self.private else ""))
         self._schedule_session()
@@ -475,7 +501,10 @@ class MainWindow(QMainWindow):
 
     def _set_reload_icon(self, loading):
         self.reload_btn.setIcon(self.icon("stop" if loading else "reload"))
-        self.reload_btn.setToolTip("Stop loading (Esc)" if loading else "Reload (Ctrl+R)")
+        if loading:
+            tip(self.reload_btn, "Stop", "Stop loading this page", "Esc")
+        else:
+            tip(self.reload_btn, "Reload", "Load this page again", "Ctrl+R")
 
     def update_security(self):
         t = self.current()
@@ -624,7 +653,7 @@ class MainWindow(QMainWindow):
         mgr = QToolButton()
         mgr.setObjectName("bm")
         mgr.setIcon(self.icon("bookmark", size=16))
-        mgr.setToolTip("Bookmark manager (Ctrl+Shift+O)")
+        tip(mgr, "Bookmark manager", "Organize, import and export your bookmarks", "Ctrl+Shift+O")
         mgr.clicked.connect(lambda: self.open_url(f"{SCHEME}://bookmarks"))
         lay.addWidget(mgr)
 
@@ -641,7 +670,7 @@ class MainWindow(QMainWindow):
         btn = BookmarkButton()
         btn.setObjectName("bm")
         btn.setText(label)
-        btn.setToolTip(f"{b['title']}\n{b['url']}")
+        tip(btn, b["title"] or b["url"], b["url"])
         btn.setIcon(self._fav_icon(b["url"]))
         btn.setIconSize(QSize(16, 16))
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -660,6 +689,7 @@ class MainWindow(QMainWindow):
         else:
             btn.setIcon(self.icon("folder", size=16))
             btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        tip(btn, "More bookmarks" if icon_only else name, "Show the bookmarks that do not fit on the bar" if icon_only else f"{len(items)} bookmark{'s' if len(items) != 1 else ''} in this folder")
         m = QMenu(btn)
         for b in items:
             a = QAction(self._fav_icon(b["url"]), (b["title"] or b["url"])[:60], m)
@@ -695,7 +725,7 @@ class MainWindow(QMainWindow):
     def _downloads_changed(self):
         self.dl_btn.setVisible(bool(self.app.downloads.list()))
         n = self.app.downloads.active_count()
-        self.dl_btn.setToolTip("Downloads (Ctrl+J)" + (f" - {n} in progress" if n else ""))
+        tip(self.dl_btn, "Downloads", f"{n} download{'s' if n != 1 else ''} in progress" if n else "See files you have downloaded", "Ctrl+J")
 
     def _popup_menu(self):
         t = self.current()
@@ -737,6 +767,8 @@ class MainWindow(QMainWindow):
             t.reload()
         elif name == "duplicate":
             self.new_tab(t.real_url().toString(), index=i + 1)
+        elif name == "new_window":
+            self.move_tab_to_new_window(i)
         elif name == "pin":
             t.pinned = not t.pinned
             self._decorate(t)
@@ -768,7 +800,7 @@ class MainWindow(QMainWindow):
         for i, t in enumerate(self.tabs):
             a = m.addAction(self.tabbar.tabIcon(i), (t.title() or "Tab")[:60])
             a.triggered.connect(lambda _=False, k=i: self.tabbar.setCurrentIndex(k))
-        m.exec(self.mapToGlobal(self.tabbar.pos()) + self.strip.pos())
+        m.exec(self.tabsearch_btn.mapToGlobal(QPoint(0, self.tabsearch_btn.height() + 4)))
 
     def show_main_menu(self):
         t = self.current()
@@ -808,7 +840,7 @@ class MainWindow(QMainWindow):
                 zl.addWidget(lbl)
         fs = QToolButton()
         fs.setIcon(self.icon("fullscreen", size=16))
-        fs.setToolTip("Full screen (F11)")
+        tip(fs, "Full screen", "Hide the toolbars and fill the screen", "F11")
         fs.clicked.connect(lambda: (m.close(), self.toggle_fullscreen()))
         zl.addWidget(fs)
         zw.setDefaultWidget(zr)
@@ -906,6 +938,158 @@ class MainWindow(QMainWindow):
     def cycle(self, d):
         if self.tabs:
             self.tabbar.setCurrentIndex((self.tabbar.currentIndex() + d) % len(self.tabs))
+
+    # ===================================================================== moving tabs between windows
+    def detach_tab(self, i):
+        """Take tab i out of this window WITHOUT destroying it (used when dragging a tab out / into another window)."""
+        if not (0 <= i < len(self.tabs)):
+            return None
+        tab = self.tabs[i]
+        was_current = i == self.tabbar.currentIndex()
+        self.tabbar.blockSignals(True)
+        self.tabs.pop(i)
+        self.tabbar.removeTab(i)
+        self.tabbar.blockSignals(False)
+        self.stack.removeWidget(tab)
+        for sig in (tab.titleChanged, tab.urlChanged, tab.iconChanged, tab.loadingChanged, tab.progressChanged, tab.audioChanged,
+                    tab.securityChanged, tab.zoomChanged, tab.popupBlocked, tab.openTab, tab.openWindow, tab.closeRequested,
+                    tab.fullscreenToggled, tab.focusOmnibox):
+            try:
+                sig.disconnect()
+            except TypeError:
+                pass
+        tab.hide()
+        self.tabbar.clear_loading()
+        for t in self.tabs:
+            if t.loading:
+                self.tabbar.set_loading(self.index_of(t), True)
+        if self.tabs and was_current:
+            self._current_changed(self.tabbar.currentIndex())
+        self._schedule_session()
+        return tab
+
+    def adopt_tab(self, tab, index=None, activate=True):
+        """Insert a tab that was detached from another window."""
+        i = len(self.tabs) if index is None else max(0, min(index, len(self.tabs)))
+        self._wire_tab(tab)
+        self.tabs.insert(i, tab)
+        self.stack.insertWidget(i, tab)
+        self.tabbar.blockSignals(True)
+        self.tabbar.insertTab(i, self.icon("globe", size=16), tab.title())
+        self.tabbar.blockSignals(False)
+        self._decorate(tab)
+        self._tab_title(tab)
+        tab.loading and self.tabbar.set_loading(i, True)
+        if not tab.loading:
+            self._tab_icon(tab)
+        if activate:
+            self.tabbar.setCurrentIndex(i)
+            self._current_changed(i)
+        self._schedule_session()
+        return tab
+
+    def move_tab_to_new_window(self, i):
+        if len(self.tabs) < 2 or not (0 <= i < len(self.tabs)):
+            return
+        tab = self.detach_tab(i)
+        w = self.app.new_window(private=self.private, show=False, empty=True)
+        w.resize(self.size() if not self.isMaximized() else self.normalGeometry().size())
+        w.adopt_tab(tab)
+        w.move(self.pos() + QPoint(40, 40))
+        w.show()
+        w.raise_()
+        w.activateWindow()
+
+    def drop_hint_index(self, global_pos):
+        x = self.tabbar.mapFromGlobal(global_pos).x()
+        for k in range(self.tabbar.count()):
+            if x < self.tabbar.tabRect(k).center().x():
+                return k
+        return self.tabbar.count()
+
+    def show_drop_hint(self, global_pos):
+        k = self.drop_hint_index(global_pos)
+        if k < self.tabbar.count():
+            x = self.tabbar.tabRect(k).left()
+        elif self.tabbar.count():
+            x = self.tabbar.tabRect(self.tabbar.count() - 1).right()
+        else:
+            x = 0
+        p = self.tabbar.mapTo(self.strip, QPoint(x, 0))
+        self._drop_hint.setGeometry(p.x() - 1, 6, 3, self.strip.height() - 8)
+        self._drop_hint.show()
+        self._drop_hint.raise_()
+
+    def clear_drop_hint(self):
+        self._drop_hint.hide()
+
+    # ===================================================================== window chrome (maximise, resize edges)
+    BORDER, CORNER = 4, 14
+
+    def _update_border(self):
+        b = 0 if (self.isMaximized() or self.isFullScreen()) else self.BORDER
+        self.setContentsMargins(b, b, b, b)
+
+    def toggle_maximized(self):
+        if self.isFullScreen():
+            return
+        self.showNormal() if self.isMaximized() else self.showMaximized()
+
+    def changeEvent(self, ev):
+        super().changeEvent(ev)
+        if ev.type() == ev.Type.WindowStateChange:
+            self._update_border()
+            if hasattr(self, "wc"):
+                self.wc.refresh()
+
+    def _edges_at(self, pos):
+        if self.isMaximized() or self.isFullScreen():
+            return Qt.Edge(0)
+        x, y, w, h, m, c = pos.x(), pos.y(), self.width(), self.height(), self.BORDER, self.CORNER
+        near_h, near_v = (y < m or y >= h - m), (x < m or x >= w - m)
+        left = x < m or (x < c and near_h)
+        right = x >= w - m or (x >= w - c and near_h)
+        top = y < m or (y < c and near_v)
+        bottom = y >= h - m or (y >= h - c and near_v)
+        e = Qt.Edge(0)
+        if left:
+            e |= Qt.Edge.LeftEdge
+        if right:
+            e |= Qt.Edge.RightEdge
+        if top:
+            e |= Qt.Edge.TopEdge
+        if bottom:
+            e |= Qt.Edge.BottomEdge
+        return e
+
+    def mouseMoveEvent(self, ev):
+        e = self._edges_at(ev.position().toPoint())
+        L, R, T, B = Qt.Edge.LeftEdge, Qt.Edge.RightEdge, Qt.Edge.TopEdge, Qt.Edge.BottomEdge
+        if e in (L | T, R | B):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        elif e in (R | T, L | B):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        elif e in (L, R):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif e in (T, B):
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        else:
+            self.unsetCursor()
+        super().mouseMoveEvent(ev)
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            e = self._edges_at(ev.position().toPoint())
+            if e:
+                handle = self.windowHandle()
+                if handle is not None and handle.startSystemResize(e):
+                    ev.accept()
+                    return
+        super().mousePressEvent(ev)
+
+    def leaveEvent(self, ev):
+        self.unsetCursor()
+        super().leaveEvent(ev)
 
     # ===================================================================== fullscreen / events
     def toggle_fullscreen(self):

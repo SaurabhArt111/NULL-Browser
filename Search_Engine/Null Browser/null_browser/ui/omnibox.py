@@ -7,6 +7,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QToolButton, QWidget
 
 from ..core.search import SuggestClient
+from .tips import tip
 
 log = logging.getLogger("null.omnibox")
 KIND_ROLE = Qt.ItemDataRole.UserRole
@@ -71,7 +72,7 @@ class Omnibox(QWidget):
         self.sec = QToolButton()
         self.sec.setObjectName("chip")
         self.sec.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.sec.setToolTip("View site information")
+        tip(self.sec, "Site information", "See the connection security and what this site is allowed to do")
         self.sec.clicked.connect(self.securityClicked)
         self.edit = _Edit(self)
         self.chips = QWidget()
@@ -79,14 +80,16 @@ class Omnibox(QWidget):
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(2)
         self.popup_chip, self.zoom_chip, self.shield_chip = QToolButton(), QToolButton(), QToolButton()
-        for b, tip in ((self.popup_chip, "Pop-ups blocked"), (self.zoom_chip, "Zoom"), (self.shield_chip, "Ads and trackers blocked")):
+        for b, (t, hint) in ((self.popup_chip, ("Pop-ups blocked", "This page tried to open pop-up windows. Click to allow them")),
+                             (self.zoom_chip, ("Zoom level", "Click to zoom in, zoom out or reset")),
+                             (self.shield_chip, ("Ads and trackers blocked", "Click to see details or allow ads on this site"))):
             b.setObjectName("chip")
             b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-            b.setToolTip(tip)
+            tip(b, t, hint)
             b.hide()
             cl.addWidget(b)
         self.star = QToolButton()
-        self.star.setToolTip("Bookmark this tab (Ctrl+D)")
+        tip(self.star, "Bookmark this tab", "Save this page so you can find it again", "Ctrl+D")
         self.star.clicked.connect(self.starClicked)
         for w in (self.sec, self.edit, self.chips, self.star):
             lay.addWidget(w)

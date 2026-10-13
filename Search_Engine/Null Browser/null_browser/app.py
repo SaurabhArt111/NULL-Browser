@@ -181,8 +181,10 @@ class BrowserApp(QObject):
 
     # ------------------------------------------------------------------ profiles
     def _make_profile(self, private):
-        if private:
-            prof = QWebEngineProfile(self)                      # unnamed profile == off the record
+        if private or self.settings.get("save_site_data") is False:
+            # An unnamed profile is "off the record": cookies, logins, local storage, IndexedDB and the cache live in memory
+            # only. Used for InPrivate windows, and for normal windows only if the user turned "Keep cookies and site data" OFF.
+            prof = QWebEngineProfile(self)
             prof.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
         else:
             prof = QWebEngineProfile("NullBrowser", self)
@@ -240,12 +242,14 @@ class BrowserApp(QObject):
         QTimer.singleShot(800, lambda: prof.deleteLater())
 
     # ------------------------------------------------------------------ windows
-    def new_window(self, private=False, url=None, show=True):
+    def new_window(self, private=False, url=None, show=True, empty=False):
         from .ui.window import MainWindow
         w = MainWindow(self, private=private)
         self.windows.append(w)
         w.destroyed.connect(lambda *_: self._window_gone(w))
-        if url:
+        if empty:                                   # a tab will be adopted from another window
+            pass
+        elif url:
             w.add_tab(url)
         elif show:
             w.add_tab("null://newtab")
@@ -509,6 +513,10 @@ class BrowserApp(QObject):
     def _apply_pending_clear(self):
         """Runs before any WebEngine profile exists, so site storage dirs are unlocked."""
         try:
+            from .core.settings import peek
+            if peek().get("save_site_data", True) is False:
+                # Only when the user explicitly switched "Keep cookies and site data" OFF: remove what an earlier run left on disk.
+                shutil.rmtree(os.path.join(paths.data_dir(), "profile"), ignore_errors=True)
             if os.path.exists(self._pending_file()):
                 os.remove(self._pending_file())
                 base = paths.sub("profile", "storage")
@@ -519,7 +527,7 @@ class BrowserApp(QObject):
             log.exception("pending clear failed")
 
     def clear_data(self, types, rng="all"):
-        seconds = {"hour": 3600, "day": 86400, "week": 7 * 86400, "month": 28 * 86400}.get(rng)
+        seconds = {"15min": 900, "hour": 3600, "day": 86400, "week": 7 * 86400, "month": 28 * 86400}.get(rng)
         start = time.time() - seconds if seconds else 0
         if "history" in types:
             self.db.delete_history_range(start)
