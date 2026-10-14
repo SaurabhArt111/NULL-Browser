@@ -18,6 +18,8 @@ import logging
 import sys
 from ctypes import wintypes
 
+from PyQt6.QtCore import QAbstractNativeEventFilter, QCoreApplication
+
 log = logging.getLogger("null.winframe")
 
 IS_WIN = sys.platform.startswith("win")
@@ -76,6 +78,57 @@ def supports_snap_layouts():
         return False
 
 
+class _Filter(QAbstractNativeEventFilter):
+    """One application-wide native event filter that routes the few messages we care about to the right window.
+
+    (Overriding `nativeEvent` on the window itself crashed PyQt6 6.11 on Windows while the native window was being
+    created, so no Python runs for a window until `install()` has registered it, after the window exists.)
+    """
+    HANDLED = frozenset((WM_NCCALCSIZE, WM_NCHITTEST, WM_NCMOUSEMOVE, WM_NCMOUSELEAVE, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP))
+
+    def __init__(self):
+        super().__init__()
+        self.windows = {}                                  # hwnd -> MainWindow
+
+    def nativeEventFilter(self, event_type, message):
+        try:
+            if not self.windows or bytes(event_type) != b"windows_generic_MSG":
+                return False, 0
+            m = _msg(message)
+            if m.message not in self.HANDLED:
+                return False, 0
+            win = self.windows.get(int(m.hWnd or 0))
+            if win is None:
+                return False, 0
+            return native_event(win, m)
+        except Exception:
+            log.debug("native event filter", exc_info=True)
+            return False, 0
+
+
+_filter = None
+
+
+def registered_hwnd(window):
+    if _filter is None:
+        return None
+    for h, w in _filter.windows.items():
+        if w is window:
+            return h
+    return None
+
+
+def _register(window, hwnd):
+    global _filter
+    if _filter is None:
+        _filter = _Filter()
+        QCoreApplication.instance().installNativeEventFilter(_filter)
+    for h in [h for h, w in _filter.windows.items() if w is window]:
+        _filter.windows.pop(h, None)
+    _filter.windows[hwnd] = window
+    window.destroyed.connect(lambda *_a, h=hwnd: _filter.windows.pop(h, None))
+
+
 def install(window):
     """Give `window` (already created, frameless) the real-window styles. Returns True on success."""
     from . import enhance
@@ -84,6 +137,7 @@ def install(window):
     try:
         u = _user32()
         hwnd = int(window.winId())
+        _register(window, hwnd)
         style = u.GetWindowLongPtrW(hwnd, GWL_STYLE)
         style |= WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU
         u.SetWindowLongPtrW(hwnd, GWL_STYLE, style)
@@ -125,12 +179,9 @@ def _fit_maximised(hwnd, lparam):
         r.bottom -= 1                                  # leave a 1px strip so the hidden taskbar can still be summoned
 
 
-def native_event(win, event_type, message):
-    """Called from MainWindow.nativeEvent. Returns (handled, result)."""
+def native_event(win, m):
+    """Handle one message for `win`. Returns (handled, result) for the native event filter."""
     try:
-        if bytes(event_type) != b"windows_generic_MSG":
-            return False, 0
-        m = _msg(message)
         code = m.message
         if code == WM_NCCALCSIZE:
             # ask Windows, not Qt: this message arrives before Qt has noticed the window became maximised

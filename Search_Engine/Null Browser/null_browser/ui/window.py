@@ -1047,18 +1047,14 @@ class MainWindow(QMainWindow):
             self.snap_layouts = winframe.supports_snap_layouts()
             self._update_border()
 
-    if enhance.ENABLED and enhance.NATIVE_FRAME and winframe.IS_WIN:      # not defined at all in classic mode
-        def nativeEvent(self, event_type, message):
-            if self._native_frame:
-                handled, result = winframe.native_event(self, event_type, message)
-                if handled:
-                    return True, result
-            return super().nativeEvent(event_type, message)
-
     def showEvent(self, ev):
         super().showEvent(ev)
-        if winframe.IS_WIN and not self._native_frame:
-            self._ensure_native_frame()
+        if winframe.IS_WIN and enhance.ENABLED and enhance.NATIVE_FRAME:
+            try:
+                if not self._native_frame or winframe.registered_hwnd(self) != int(self.winId()):
+                    self._ensure_native_frame()               # first show, or Qt gave the window a new native handle
+            except Exception:
+                crash.log.debug("native frame (show)", exc_info=True)
 
     def _update_border(self):
         # With the native frame Windows owns the resize edges, so no margin is needed (and no gap shows around the page).

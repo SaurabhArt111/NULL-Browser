@@ -23,6 +23,11 @@ lines = []
 def say(text=""):
     print(text, flush=True)
     lines.append(text)
+    try:                                                    # written as we go, so a partial run still leaves a usable report
+        with open(REPORT, "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+    except OSError:
+        pass
 
 
 def tail(path, n=40):
@@ -104,6 +109,11 @@ def tasklist():
 
 
 def main():
+    try:
+        open(REPORT, "w").close()
+    except OSError:
+        pass
+    say("(Please don't click or type in the test windows while this runs: a stray click can fail a test.)")
     say(f"Null Browser diagnostics  {datetime.datetime.now():%Y-%m-%d %H:%M:%S}")
     say(f"Windows: {platform.platform()}   Python: {sys.version.split()[0]} ({platform.architecture()[0]})   exe: {sys.executable}")
     try:
@@ -162,8 +172,6 @@ def main():
         say(f"    {REAL_DATA}")
     else:
         say("Classic mode works. If B / C / E failed, the new window effects are the problem (see the details above).")
-    with open(REPORT, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
     print(f"\nReport saved to: {REPORT}\nSend me the contents of that file.")
 
 

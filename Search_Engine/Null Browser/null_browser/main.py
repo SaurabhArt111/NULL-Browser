@@ -69,12 +69,18 @@ def _enhancements(args):
             failed = int(f.read().strip() or 0)
     except (OSError, ValueError):
         failed = 0
+    try:                                                   # a marker written by an older revision: that bug is fixed, try again
+        with open(off) as f:
+            if f"rev={enhance.REV}" not in f.read():
+                os.remove(off)
+    except OSError:
+        pass
     if failed >= 1 and not os.path.exists(off):
         # The last start never finished. Don't know why, but the enhancements are the newest code: turn them off,
         # forget the failures (so we don't drop into safe mode for something they caused) and start normally.
         try:
             with open(off, "w") as f:
-                f.write("switched off automatically after a start that did not finish\n")
+                f.write(f"rev={enhance.REV}\nswitched off automatically after a start that did not finish\n")
             os.remove(counter)
         except OSError:
             pass
