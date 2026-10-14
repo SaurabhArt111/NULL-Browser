@@ -14,18 +14,23 @@ class HoverToolButton(QToolButton):
 
     def __init__(self, colors, radius=None, parent=None):
         super().__init__(parent)
+        from . import enhance
+        self._on = enhance.ENABLED                      # classic mode: behave exactly like a plain QToolButton
         self._colors, self._radius = colors, radius
         self._t = 0.0
         self._forced = False
         self._anim = QVariantAnimation(self, duration=130, easingCurve=QEasingCurve.Type.OutCubic)
         self._anim.valueChanged.connect(self._set_t)
-        self.setProperty("anim", True)
+        if self._on:
+            self.setProperty("anim", True)
 
     def _set_t(self, v):
         self._t = float(v)
         self.update()
 
     def _go(self, target):
+        if not self._on:
+            return
         self._anim.stop()
         self._anim.setStartValue(self._t)
         self._anim.setEndValue(float(target))
@@ -47,7 +52,7 @@ class HoverToolButton(QToolButton):
         super().leaveEvent(ev)
 
     def paintEvent(self, ev):
-        if self.isEnabled() and (self._t > 0.001 or self.isDown()):
+        if self._on and self.isEnabled() and (self._t > 0.001 or self.isDown()):
             hover, press = self._colors()
             col = QColor(press if self.isDown() else hover)
             if not self.isDown():

@@ -157,7 +157,7 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         v.addWidget(self.stack, 1)
-        self.veil = FadeVeil(self.stack)                  # fades between pages when the tab changes
+        self.veil = FadeVeil(self.stack) if enhance.ENABLED else None   # fades between pages when the tab changes
         self.tabs = []                            # widgets in tab order (mirrors tabbar)
 
         self._spin_timer = QTimer(self, interval=90, timeout=self._spin)
@@ -388,7 +388,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(i)
         t = self.tabs[i]
         t.activate()
-        if enhance.ENABLED:
+        if self.veil is not None:
             self.veil.flash(t.bg_color(), 0.7)
         self._sync_chrome()
         self._schedule_session()
@@ -1047,12 +1047,13 @@ class MainWindow(QMainWindow):
             self.snap_layouts = winframe.supports_snap_layouts()
             self._update_border()
 
-    def nativeEvent(self, event_type, message):
-        if self._native_frame:
-            handled, result = winframe.native_event(self, event_type, message)
-            if handled:
-                return True, result
-        return super().nativeEvent(event_type, message)
+    if enhance.ENABLED and enhance.NATIVE_FRAME and winframe.IS_WIN:      # not defined at all in classic mode
+        def nativeEvent(self, event_type, message):
+            if self._native_frame:
+                handled, result = winframe.native_event(self, event_type, message)
+                if handled:
+                    return True, result
+            return super().nativeEvent(event_type, message)
 
     def showEvent(self, ev):
         super().showEvent(ev)

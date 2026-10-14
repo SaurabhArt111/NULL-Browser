@@ -6,6 +6,7 @@ from PyQt6.QtGui import QAction, QCursor, QMouseEvent
 from PyQt6.QtWidgets import QApplication, QFrame, QHBoxLayout, QMenu, QTabBar, QToolButton, QWidget
 
 from . import icons
+from . import enhance
 from .tips import tip
 from .widgets import HoverToolButton
 
@@ -45,9 +46,10 @@ class TabStrip(QTabBar):
         self._timer = QTimer(self, interval=80)
         self._timer.timeout.connect(self._spin)
         self._grow_idx, self._grow_f = -1, 1.0                  # tab being animated open, and how far (0..1)
-        self._grow = QVariantAnimation(self, duration=170, easingCurve=QEasingCurve.Type.OutCubic)
-        self._grow.valueChanged.connect(self._grow_step)
-        self._grow.finished.connect(self._grow_done)
+        if enhance.ENABLED:
+            self._grow = QVariantAnimation(self, duration=170, easingCurve=QEasingCurve.Type.OutCubic)
+            self._grow.valueChanged.connect(self._grow_step)
+            self._grow.finished.connect(self._grow_done)
         self.restyle()
 
     def restyle(self):
@@ -67,32 +69,32 @@ class TabStrip(QTabBar):
             w = max(10, int(w * self._grow_f))
         return QSize(w, h)
 
-    # -- new tabs slide open instead of popping in ----------------------------------------------
-    def tabInserted(self, index):
-        super().tabInserted(index)
-        from . import enhance
-        if enhance.ENABLED and self.isVisible() and self.count() > 1 and self.tabData(index) != "pinned":
-            self._grow_idx, self._grow_f = index, 0.0
-            self._grow.stop()
-            self._grow.setStartValue(0.0)
-            self._grow.setEndValue(1.0)
-            self._grow.start()
+    if enhance.ENABLED:                                      # classic mode: tabs just appear
+        # -- new tabs slide open instead of popping in ----------------------------------------------
+        def tabInserted(self, index):
+            super().tabInserted(index)
+            if self.isVisible() and self.count() > 1 and self.tabData(index) != "pinned":
+                self._grow_idx, self._grow_f = index, 0.0
+                self._grow.stop()
+                self._grow.setStartValue(0.0)
+                self._grow.setEndValue(1.0)
+                self._grow.start()
 
-    def tabRemoved(self, index):
-        super().tabRemoved(index)
-        self._grow.stop()                                      # indexes shifted: settle immediately
-        self._grow_idx, self._grow_f = -1, 1.0
+        def tabRemoved(self, index):
+            super().tabRemoved(index)
+            self._grow.stop()                                      # indexes shifted: settle immediately
+            self._grow_idx, self._grow_f = -1, 1.0
 
-    def _grow_step(self, v):
-        self._grow_f = float(v)
-        i = self._grow_idx
-        if 0 <= i < self.count():
-            self.setTabText(i, self.tabText(i))               # makes QTabBar ask tabSizeHint again
+        def _grow_step(self, v):
+            self._grow_f = float(v)
+            i = self._grow_idx
+            if 0 <= i < self.count():
+                self.setTabText(i, self.tabText(i))               # makes QTabBar ask tabSizeHint again
 
-    def _grow_done(self):
-        i, self._grow_idx, self._grow_f = self._grow_idx, -1, 1.0
-        if 0 <= i < self.count():
-            self.setTabText(i, self.tabText(i))
+        def _grow_done(self):
+            i, self._grow_idx, self._grow_f = self._grow_idx, -1, 1.0
+            if 0 <= i < self.count():
+                self.setTabText(i, self.tabText(i))
 
     def minimumTabSizeHint(self, index):
         return QSize(self.PINNED_W if self.tabData(index) == "pinned" else self.MIN_W, 40)

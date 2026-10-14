@@ -16,6 +16,8 @@ def _parse(argv):
     ap.add_argument("--selftest", metavar="OUTDIR", help="run the headless end-to-end self-test and exit")
     ap.add_argument("--enhanced", action="store_true", help="turn the window / animation enhancements back on after they were auto-disabled")
     ap.add_argument("--no-native-frame", action="store_true", help="keep the animations but skip the Windows native window frame (snap / resize)")
+    ap.add_argument("--classic", action="store_true", help="run without any of the newer window / animation code (diagnostics)")
+    ap.add_argument("--exit-after", type=float, default=0, help=argparse.SUPPRESS)       # diagnostics: quit cleanly after N seconds
     ap.add_argument("--new-instance", action="store_true", help="don't hand over to an already running browser")
     return ap.parse_known_args(argv)[0]
 
@@ -52,6 +54,8 @@ def _enhancements(args):
     from .ui import enhance
     off = os.path.join(paths.data_dir(), "enhancements.off")
     counter = os.path.join(paths.data_dir(), "startup-failures.txt")
+    if args.classic:
+        return False
     if args.enhanced:
         try:
             os.remove(off)
@@ -126,6 +130,7 @@ def main(argv=None):
         log.info("Handed over to the running instance")
         return 0
 
+    log.info("Start-up check passed (no running instance to hand over to)")
     failures = crash.register_startup()
     safe = args.safe_mode
     if failures >= 3 and not safe:
@@ -135,8 +140,11 @@ def main(argv=None):
     from .ui import icons
     qapp.setWindowIcon(icons.app_icon())
     try:
+        log.info("Creating the browser (safe mode: %s)", safe)
         app = BrowserApp(qapp, safe_mode=safe)
+        log.info("Browser object ready; opening windows")
         app.start(urls, private=args.private)
+        log.info("Windows opened: %d", len(app.windows))
         if enhance.AUTO_DISABLED and app.windows:
             app.windows[0].add_infobar("The last start didn't finish, so the new window effects (native snap / resize, animations) were switched off. "
                                        "Start with --enhanced to try them again.", [("Dismiss", lambda: None)])
@@ -149,6 +157,9 @@ def main(argv=None):
     if args.selftest:
         from . import selftest
         QTimer.singleShot(1500, lambda: selftest.run(app, args.selftest))
+    if args.exit_after > 0:
+        QTimer.singleShot(int(args.exit_after * 1000), qapp.quit)
+    log.info("Entering the event loop")
     code = qapp.exec()
     log.info("Exited with code %s", code)
     return code

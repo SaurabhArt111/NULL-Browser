@@ -203,6 +203,9 @@ class Tab(QWidget):
         return QColor("#ffffff")
 
     def refresh_background(self, url=None):
+        from . import enhance
+        if not enhance.ENABLED:
+            return
         try:
             self.page.setBackgroundColor(self.bg_color(url))
         except Exception:
