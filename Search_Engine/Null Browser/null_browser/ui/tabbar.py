@@ -1,12 +1,13 @@
 """Chrome-style tab strip: adaptive widths, pinned tabs, audio buttons, loading spinner, drag reorder."""
 import logging
 
-from PyQt6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QEvent, QPoint, QPointF, QSize, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt6.QtGui import QAction, QCursor, QMouseEvent
 from PyQt6.QtWidgets import QApplication, QFrame, QHBoxLayout, QMenu, QTabBar, QToolButton, QWidget
 
 from . import icons
 from .tips import tip
+from .widgets import HoverToolButton
 
 log = logging.getLogger("null.tabbar")
 
@@ -43,6 +44,10 @@ class TabStrip(QTabBar):
         self._frame = 0
         self._timer = QTimer(self, interval=80)
         self._timer.timeout.connect(self._spin)
+        self._grow_idx, self._grow_f = -1, 1.0                  # tab being animated open, and how far (0..1)
+        self._grow = QVariantAnimation(self, duration=170, easingCurve=QEasingCurve.Type.OutCubic)
+        self._grow.valueChanged.connect(self._grow_step)
+        self._grow.finished.connect(self._grow_done)
         self.restyle()
 
     def restyle(self):
@@ -58,7 +63,35 @@ class TabStrip(QTabBar):
         avail = max(200, (self.parentWidget().width() if self.parentWidget() else 1000) - self.reserved) - pinned * self.PINNED_W
         unpinned = max(1, n - pinned)
         w = max(self.MIN_W, min(self.MAX_W, avail // unpinned))
+        if index == self._grow_idx and self._grow_f < 1.0:
+            w = max(10, int(w * self._grow_f))
         return QSize(w, h)
+
+    # -- new tabs slide open instead of popping in ----------------------------------------------
+    def tabInserted(self, index):
+        super().tabInserted(index)
+        if self.isVisible() and self.count() > 1 and self.tabData(index) != "pinned":
+            self._grow_idx, self._grow_f = index, 0.0
+            self._grow.stop()
+            self._grow.setStartValue(0.0)
+            self._grow.setEndValue(1.0)
+            self._grow.start()
+
+    def tabRemoved(self, index):
+        super().tabRemoved(index)
+        self._grow.stop()                                      # indexes shifted: settle immediately
+        self._grow_idx, self._grow_f = -1, 1.0
+
+    def _grow_step(self, v):
+        self._grow_f = float(v)
+        i = self._grow_idx
+        if 0 <= i < self.count():
+            self.setTabText(i, self.tabText(i))               # makes QTabBar ask tabSizeHint again
+
+    def _grow_done(self):
+        i, self._grow_idx, self._grow_f = self._grow_idx, -1, 1.0
+        if 0 <= i < self.count():
+            self.setTabText(i, self.tabText(i))
 
     def minimumTabSizeHint(self, index):
         return QSize(self.PINNED_W if self.tabData(index) == "pinned" else self.MIN_W, 40)
@@ -276,7 +309,12 @@ class WindowControls(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        self.min_btn, self.max_btn, self.close_btn = QToolButton(), QToolButton(), QToolButton()
+        colors = lambda: (win.pal["hover"], win.pal["press"])
+        self.min_btn = HoverToolButton(colors, radius=0)
+        self.max_btn = HoverToolButton(colors, radius=0)
+        self.close_btn = HoverToolButton(lambda: ("#e81123", "#f1707a"), radius=0)
+        self._poll = QTimer(self, interval=40)                  # clears the hot look once Windows stops reporting the mouse
+        self._poll.timeout.connect(self._poll_max)
         for b, name, fn in ((self.min_btn, "wc_min", win.showMinimized), (self.max_btn, "wc_max", win.toggle_maximized),
                             (self.close_btn, "wc_close", win.close)):
             b.setObjectName(name)
@@ -288,6 +326,24 @@ class WindowControls(QWidget):
         tip(self.min_btn, "Minimize", "Send this window to the taskbar")
         tip(self.close_btn, "Close window", "Close every tab in this window", "Alt+F4")
         self.refresh()
+
+    def set_max_state(self, hot=None, pressed=None):
+        """The maximise button's mouse input is owned by Windows (snap layouts), so its look is driven from here."""
+        if hot is not None:
+            self.max_btn.set_forced(hot)
+            if hot and not self._poll.isActive():
+                self._poll.start()
+            elif not hot:
+                self._poll.stop()
+        if pressed is not None:
+            self.max_btn.setDown(pressed)
+
+    def _poll_max(self):
+        b = self.max_btn
+        if not b.rect().contains(b.mapFromGlobal(QCursor.pos())):
+            self._poll.stop()
+            b.setDown(False)
+            b.set_forced(False)
 
     def refresh(self):
         w, ic = self.win, self.win.icon

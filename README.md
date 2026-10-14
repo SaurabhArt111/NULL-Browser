@@ -25,6 +25,15 @@ Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--d
 
 ## What's new in this version
 
+- **Native window behaviour (Windows).** The frameless window is now a real Windows window underneath: Aero Snap, drag-to-restore from maximised,
+  Snap Layouts on the maximise button (Windows 11), drop shadow, rounded corners, edge/corner resizing and the system open / minimise / maximise / close
+  animations all behave like Chrome. If native set-up ever fails the old Qt-only edge handling is used automatically (`ui/winframe.py`).
+- **Transitions.** New tabs slide open, switching tabs cross-fades, toolbar / tab-strip / window buttons fade their hover state, menus and tooltips ease in,
+  and the built-in pages fade in. Pages no longer flash black before first paint (page background follows the theme / white like Chrome).
+- **Smooth scrolling.** Chromium's eased scrolling and GPU rasterisation are switched on at start-up (Settings → System → *Smooth scrolling* / *graphics acceleration*; needs a restart).
+- **Middle-click auto-scroll cursor.** The resize-arrow cursor is replaced with Chrome's round anchor icon and direction arrows (`ui/autoscroll.py`).
+- **Resizing.** The bookmarks bar is rebuilt once when you stop dragging an edge instead of on every pixel.
+
 - **Chrome-style window.** The title bar and tab strip are one: `[tab ×] [tab ×] [+]  …  [–] [▢] [✕]`. Drag the empty strip to move the window,
   double-click it to maximise, drag the edges to resize (Snap layouts and Aero-snap still work through the system move / resize).
 - **Tab tear-off.** Drag a tab out of the strip and it becomes its own window that follows the cursor; drop it on another browser window's tab

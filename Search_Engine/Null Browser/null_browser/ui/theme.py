@@ -71,6 +71,8 @@ QToolButton#tabsearch {{ border-radius: 12px; padding: 4px; margin: 10px 4px 0 0
 QToolButton#wc_min, QToolButton#wc_max, QToolButton#wc_close {{ border-radius: 0; padding: 0; margin: 0; background: transparent; }}
 QToolButton#wc_min:hover, QToolButton#wc_max:hover {{ background: {p['hover']}; }}
 QToolButton#wc_close:hover {{ background: #e81123; }}
+QToolButton[anim="true"]:hover, QToolButton[anim="true"]:pressed {{ background: transparent; }}
+QToolButton#wc_min[anim="true"]:hover, QToolButton#wc_max[anim="true"]:hover, QToolButton#wc_close[anim="true"]:hover {{ background: transparent; }}
 QFrame#drophint {{ background: {a}; border-radius: 1px; }}
 QToolButton#bm {{ border-radius: 8px; padding: 4px 8px; font-size: 12px; }}
 QToolButton#tabclose, QToolButton#tabaudio {{ border-radius: 9px; padding: 3px; }}

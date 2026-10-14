@@ -388,6 +388,7 @@ button:hover {
 .fade-in {
     animation: fadeIn 0.3s ease-in-out;
 }
+
 /* --- Added: search suggestions dropdown --- */
 .search-suggestions {
     position: relative;

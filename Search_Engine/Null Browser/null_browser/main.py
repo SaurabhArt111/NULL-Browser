@@ -33,6 +33,10 @@ def _chromium_flags(settings_path, safe):
         flags.append("--js-flags=--jitless")
     if safe:
         flags.append("--disable-extensions")
+    if not safe and data.get("smooth_scrolling") is not False:
+        flags.append("--enable-smooth-scrolling")          # Chromium's eased wheel / keyboard scrolling (off by default in Qt WebEngine)
+    if not safe and data.get("hardware_acceleration") is not False:
+        flags.append("--enable-gpu-rasterization")         # raster on the GPU: smoother scrolling and resizing on heavy pages
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         flags.append("--no-sandbox")                       # Chromium refuses to run as root otherwise
     existing = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
@@ -65,6 +69,9 @@ def main(argv=None):
     native.set_app_user_model_id(f"{C.ORG_NAME}.{C.APP_ID}.3")
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     qapp = QApplication(sys.argv[:1])
+    for eff in (Qt.UIEffect.UI_AnimateMenu, Qt.UIEffect.UI_FadeMenu, Qt.UIEffect.UI_AnimateCombo,
+                Qt.UIEffect.UI_AnimateTooltip, Qt.UIEffect.UI_FadeTooltip):
+        qapp.setEffectEnabled(eff, True)                    # menus, combo lists and tooltips ease in instead of popping
     qapp.setApplicationDisplayName(C.APP_NAME)
     qapp.setDesktopFileName("null-browser")
 

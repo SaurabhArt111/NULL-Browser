@@ -17,6 +17,7 @@ from ..constants import SCHEME
 from ..core import crash
 from ..core.permissions import ASK_PREFIX, BY_ID, PROMPT_VERBS, QT_PERMISSION_MAP, origin_of
 from . import icons
+from .autoscroll import PanCursorFilter
 from .tips import tip
 
 log = logging.getLogger("null.tab")
@@ -74,6 +75,7 @@ class WebView(QWebEngineView):
     def __init__(self, tab):
         super().__init__(tab)
         self.tab = tab
+        self.pan_cursor = PanCursorFilter(self)         # Chrome-style cursor for middle-click auto-scroll
 
     def contextMenuEvent(self, ev):
         try:
@@ -149,6 +151,8 @@ class Tab(QWidget):
         self._configure_settings()
         self._wire()
         self.app.themeChanged.connect(self._restyle_devtools)
+        self.app.themeChanged.connect(self.refresh_background)
+        self.refresh_background()
 
     # ---- setup ----------------------------------------------------------------------
     def _configure_settings(self):
@@ -187,6 +191,22 @@ class Tab(QWidget):
             sig = getattr(p, name, None)
             if sig is not None:
                 sig.connect(slot)
+
+    # ---- page background (what shows before a page has painted) ---------------------------------------
+    def bg_color(self, url=None):
+        """Our own pages use the theme colour; web pages start white like Chrome (dark if forced dark mode is on)."""
+        colors = self.app.pal(self.private)
+        u = url if url is not None else self.page.url()
+        internal = u.isEmpty() or u.scheme() in (SCHEME, "about")
+        if internal or (colors["dark"] and self.app.settings.get("web_dark_mode")):
+            return QColor(colors["bar"])
+        return QColor("#ffffff")
+
+    def refresh_background(self, url=None):
+        try:
+            self.page.setBackgroundColor(self.bg_color(url))
+        except Exception:
+            log.debug("background colour", exc_info=True)
 
     # ---- state helpers ----------------------------------------------------------------
     def real_url(self):
@@ -266,6 +286,9 @@ class Tab(QWidget):
         """Runs before every main-frame navigation: per-site settings and the JS API gate."""
         self.current_origin = origin_of(url.toString())
         self.app.apply_site_policy(self, url)
+        self.refresh_background(url)
+        self.view.pan_cursor.disarm()
+        self.view.pan_cursor.attach()
 
     def open_external(self, url):
         r = QMessageBox.question(self.window(), "Open external application?",

@@ -13,12 +13,13 @@ from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu, QM
 from ..constants import APP_NAME, SCHEME
 from ..core import crash
 from ..core.search import display_url
-from . import icons, native, theme
+from . import icons, native, theme, winframe
 from .omnibox import Omnibox
 from .popups import BookmarkEditor, DownloadsPopup, InfoBar, SiteInfoPopup
 from .tab import Tab
 from .tabbar import TabStrip, TitleStrip, WindowControls
 from .tips import tip, tip_html
+from .widgets import FadeVeil, HoverToolButton
 
 log = logging.getLogger("null.window")
 
@@ -55,6 +56,9 @@ class MainWindow(QMainWindow):
         self.setMouseTracking(True)
         self._resize_edges = Qt.Edge(0)
         self._hint = None
+        self._native_frame = False                        # True once Windows treats us as a real resizable window
+        self.snap_layouts = False                         # Windows 11 Snap Layouts flyout on the maximise button
+        self._bm_timer = QTimer(self, singleShot=True, interval=70, timeout=lambda: self.refresh_bookmarks())
         self._update_border()
 
         root = QWidget()
@@ -68,7 +72,7 @@ class MainWindow(QMainWindow):
         sh = QHBoxLayout(self.strip)
         sh.setContentsMargins(6, 0, 0, 0)
         sh.setSpacing(0)
-        self.tabsearch_btn = QToolButton()
+        self.tabsearch_btn = HoverToolButton(self._hover_colors, radius=12)
         self.tabsearch_btn.setObjectName("tabsearch")
         self.tabsearch_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         tip(self.tabsearch_btn, "Search tabs", "See and jump to any open tab", "Ctrl+Shift+A")
@@ -81,7 +85,7 @@ class MainWindow(QMainWindow):
         self.tabbar.newTabRequested.connect(lambda: self.new_tab())
         self.tabbar.menuAction.connect(self._tab_menu_action)
         self.tabbar.audioToggled.connect(self._toggle_mute_index)
-        self.newtab_btn = QToolButton()
+        self.newtab_btn = HoverToolButton(self._hover_colors, radius=13)
         self.newtab_btn.setObjectName("newtab")
         self.newtab_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         tip(self.newtab_btn, "New tab", "Open a blank tab", "Ctrl+T")
@@ -153,6 +157,7 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         v.addWidget(self.stack, 1)
+        self.veil = FadeVeil(self.stack)                  # fades between pages when the tab changes
         self.tabs = []                            # widgets in tab order (mirrors tabbar)
 
         self._spin_timer = QTimer(self, interval=90, timeout=self._spin)
@@ -163,6 +168,7 @@ class MainWindow(QMainWindow):
         self.refresh_bookmarks()
         self.app.downloads.changed.connect(self._downloads_changed)
         self._downloads_changed()
+        self._ensure_native_frame()
 
     # ===================================================================== plumbing
     @property
@@ -176,8 +182,12 @@ class MainWindow(QMainWindow):
     def icon(self, name, color=None, size=20):
         return self.app.icon(name, color=color, size=size, private=self.private)
 
+    def _hover_colors(self):
+        p = self.pal
+        return p["hover"], p["press"]
+
     def _tbtn(self, tipspec, fn):
-        b = QToolButton()
+        b = HoverToolButton(self._hover_colors)
         tip(b, *tipspec)
         b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setIconSize(QSize(20, 20))
@@ -378,6 +388,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(i)
         t = self.tabs[i]
         t.activate()
+        self.veil.flash(t.bg_color(), 0.7)
         self._sync_chrome()
         self._schedule_session()
         if t.is_internal() and t.page.url().host() == "newtab":
@@ -1026,8 +1037,30 @@ class MainWindow(QMainWindow):
     # ===================================================================== window chrome (maximise, resize edges)
     BORDER, CORNER = 4, 14
 
+    def _ensure_native_frame(self):
+        """Windows: turn the frameless window into a real resizable window (snap, shadow, animations). Idempotent."""
+        if not winframe.IS_WIN:
+            return
+        if winframe.install(self):
+            self._native_frame = True
+            self.snap_layouts = winframe.supports_snap_layouts()
+            self._update_border()
+
+    def nativeEvent(self, event_type, message):
+        if self._native_frame:
+            handled, result = winframe.native_event(self, event_type, message)
+            if handled:
+                return True, result
+        return super().nativeEvent(event_type, message)
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if winframe.IS_WIN and not self._native_frame:
+            self._ensure_native_frame()
+
     def _update_border(self):
-        b = 0 if (self.isMaximized() or self.isFullScreen()) else self.BORDER
+        # With the native frame Windows owns the resize edges, so no margin is needed (and no gap shows around the page).
+        b = 0 if (self._native_frame or self.isMaximized() or self.isFullScreen()) else self.BORDER
         self.setContentsMargins(b, b, b, b)
 
     def toggle_maximized(self):
@@ -1043,7 +1076,7 @@ class MainWindow(QMainWindow):
                 self.wc.refresh()
 
     def _edges_at(self, pos):
-        if self.isMaximized() or self.isFullScreen():
+        if self._native_frame or self.isMaximized() or self.isFullScreen():
             return Qt.Edge(0)
         x, y, w, h, m, c = pos.x(), pos.y(), self.width(), self.height(), self.BORDER, self.CORNER
         near_h, near_v = (y < m or y >= h - m), (x < m or x >= w - m)
@@ -1124,7 +1157,7 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
-        QTimer.singleShot(0, self.refresh_bookmarks)
+        self._bm_timer.start()                            # rebuild the bookmarks bar once the drag settles, not per pixel
 
     def dragEnterEvent(self, ev):
         if ev.mimeData().hasUrls() or ev.mimeData().hasText():
