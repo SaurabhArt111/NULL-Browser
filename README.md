@@ -32,6 +32,9 @@ Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--d
   and the built-in pages fade in. Pages no longer flash black before first paint (page background follows the theme / white like Chrome).
 - **Smooth scrolling.** Chromium's eased scrolling and GPU rasterisation are switched on at start-up (Settings → System → *Smooth scrolling* / *graphics acceleration*; needs a restart).
 - **Middle-click auto-scroll cursor.** The resize-arrow cursor is replaced with Chrome's round anchor icon and direction arrows (`ui/autoscroll.py`).
+- **Fail-safe.** If a start-up never finishes, the next start switches these window effects off automatically (and says so in an info bar) instead of
+  looping into safe mode. `--enhanced` turns them back on, `--no-native-frame` keeps the animations but skips the Windows native frame.
+  Native crashes are written to `logs/native-crash.log` in the data folder (the path is printed as `Data folder:` by `python main.py --debug`).
 - **Resizing.** The bookmarks bar is rebuilt once when you stop dragging an edge instead of on every pixel.
 
 - **Chrome-style window.** The title bar and tab strip are one: `[tab ×] [tab ×] [+]  …  [–] [▢] [✕]`. Drag the empty strip to move the window,

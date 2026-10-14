@@ -70,7 +70,8 @@ class TabStrip(QTabBar):
     # -- new tabs slide open instead of popping in ----------------------------------------------
     def tabInserted(self, index):
         super().tabInserted(index)
-        if self.isVisible() and self.count() > 1 and self.tabData(index) != "pinned":
+        from . import enhance
+        if enhance.ENABLED and self.isVisible() and self.count() > 1 and self.tabData(index) != "pinned":
             self._grow_idx, self._grow_f = index, 0.0
             self._grow.stop()
             self._grow.setStartValue(0.0)

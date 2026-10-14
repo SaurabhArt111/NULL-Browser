@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu, QM
 from ..constants import APP_NAME, SCHEME
 from ..core import crash
 from ..core.search import display_url
-from . import icons, native, theme, winframe
+from . import enhance, icons, native, theme, winframe
 from .omnibox import Omnibox
 from .popups import BookmarkEditor, DownloadsPopup, InfoBar, SiteInfoPopup
 from .tab import Tab
@@ -388,7 +388,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(i)
         t = self.tabs[i]
         t.activate()
-        self.veil.flash(t.bg_color(), 0.7)
+        if enhance.ENABLED:
+            self.veil.flash(t.bg_color(), 0.7)
         self._sync_chrome()
         self._schedule_session()
         if t.is_internal() and t.page.url().host() == "newtab":

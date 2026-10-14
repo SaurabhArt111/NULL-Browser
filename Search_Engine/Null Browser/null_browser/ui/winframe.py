@@ -78,7 +78,8 @@ def supports_snap_layouts():
 
 def install(window):
     """Give `window` (already created, frameless) the real-window styles. Returns True on success."""
-    if not IS_WIN:
+    from . import enhance
+    if not IS_WIN or not enhance.ENABLED or not enhance.NATIVE_FRAME:
         return False
     try:
         u = _user32()

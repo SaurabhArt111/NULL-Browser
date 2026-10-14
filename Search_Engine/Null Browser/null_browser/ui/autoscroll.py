@@ -91,6 +91,9 @@ class PanCursorFilter(QObject):
     def __init__(self, view):
         super().__init__(view)
         self.view = view
+        from . import enhance
+        if not enhance.ENABLED:
+            return                                      # inert: no filters installed
         self._armed = False
         self._origin = None
         self._busy = False
@@ -100,6 +103,9 @@ class PanCursorFilter(QObject):
 
     def attach(self):
         """(Re)hook the view's render widgets; Qt WebEngine creates / replaces them lazily."""
+        from . import enhance
+        if not enhance.ENABLED:
+            return
         widgets = list(self.view.findChildren(QWidget))
         if self.view.focusProxy() is not None:
             widgets.append(self.view.focusProxy())
@@ -115,9 +121,9 @@ class PanCursorFilter(QObject):
     def eventFilter(self, obj, ev):
         t = ev.type()
         try:
-            if t == QEvent.Type.ChildAdded and obj is self.view:
-                child = ev.child()
-                if child is not None and child.isWidgetType():
+            if t == QEvent.Type.ChildPolished and obj is self.view:
+                child = ev.child()                      # polished = fully constructed (ChildAdded fires mid-construction)
+                if child is not None and child.isWidgetType() and child not in self._watched:
                     child.installEventFilter(self)
                     self._watched.add(child)
             elif t == QEvent.Type.MouseButtonPress:
