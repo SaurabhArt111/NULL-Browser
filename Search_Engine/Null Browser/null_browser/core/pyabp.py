@@ -9,8 +9,9 @@ matter in practice:
   bundled resources), removeparam=, generichide / elemhide / document exceptions;
 * cosmetic filters: generic and per-domain hide rules, `#@#` exceptions, entity domains (`google.*`).
 
-Not supported (the rule is *skipped*, never mis-applied): procedural cosmetics (`:has-text`, `:xpath` ...), scriptlet
-injection (`##+js`), `$csp`, `$replace`, `$header`, `$method`, `$to`. Use the native engine for those.
+* scriptlet injection (`##+js(...)`, shared with the PyPI-wheel engine: see `scriptlets.py`).
+
+Not supported (the rule is *skipped*, never mis-applied): procedural cosmetics (`:has-text`, `:xpath` ...), `$csp`, `$replace`, `$header`, `$method`, `$to`. Use the native engine for those.
 
 Lookup is token-indexed (like adblock-rust): every rule is filed under the rarest-looking alphanumeric token of its
 pattern, so a request is only compared with the few rules that share a token with its URL.
@@ -20,6 +21,8 @@ import json
 import marshal
 import re
 from urllib.parse import quote, unquote
+
+from .scriptlets import Scriptlets
 
 # request-type bits ---------------------------------------------------------------------------------------------------
 T_DOC, T_SUB, T_CSS, T_SCRIPT, T_IMG, T_FONT, T_MEDIA, T_OBJ, T_XHR, T_PING, T_WS, T_CSP, T_OTHER, T_POPUP = (1 << i for i in range(14))
@@ -378,6 +381,7 @@ class Engine:
         self.resources = {}             # redirect name -> data: url
         self._bad = []
         self._raw = []                  # parsed filters, used by serialize()
+        self.sc = Scriptlets()
 
     # ------------------------------------------------------------------ building
     @staticmethod
@@ -389,6 +393,14 @@ class Engine:
         return e
 
     def _add_list(self, text, fmt="standard"):
+        if fmt == "scriptlets":                             # heavy list: take only its (cheap) scriptlet rules
+            if "+js(" in text:
+                for ln in text.splitlines():
+                    if "+js(" in ln and ln[:1] != "!":
+                        sr = Scriptlets.split_rule(ln.strip())
+                        if sr is not None:
+                            self._raw.append(("s", sr[0], sr[1], sr[2]))
+            return
         lines = text.splitlines()
         if fmt == "hosts":
             for ln in lines:
@@ -405,6 +417,11 @@ class Engine:
             ln = ln.strip()
             if not ln or ln[0] == "!" or ln.startswith("[Adblock") or ln.startswith("# "):
                 continue
+            if "+js(" in ln:
+                sr = Scriptlets.split_rule(ln)
+                if sr is not None:
+                    self._raw.append(("s", sr[0], sr[1], sr[2]))
+                    continue
             m = _COSMETIC.match(ln) if "#" in ln else None
             if m:
                 domains, op, sel = m.groups()
@@ -420,9 +437,13 @@ class Engine:
         for item in self._raw:                              # `X$badfilter` switches off the rule `X` (compared option-by-option, so 3p == third-party)
             if item[0] == "n" and item[2][12] == "badfilter":
                 bad.add((item[1], item[2][:12]))
+        self.sc = Scriptlets()
         for item in self._raw:
             if item[0] == "c":
                 self._add_cosmetic(item[1], item[2], item[3])
+                continue
+            if item[0] == "s":
+                self.sc.add_rule(item[1], item[2], item[3])
                 continue
             _, exception, t = item
             if t[12] == "badfilter" or (exception, t[:12]) in bad:
@@ -444,6 +465,7 @@ class Engine:
                 self.block.add(rule)
         for idx in (self.block, self.allow, self.hide_flags, self.doc_allow):
             idx.build()
+        self.sc.finish()
 
     def _add_cosmetic(self, exception, domains, sel):
         inc, exc = [], []
@@ -480,6 +502,7 @@ class Engine:
     # ------------------------------------------------------------------ resources
     def add_resources_json(self, text):
         n = 0
+        self.sc.set_resources(text)
         for r in json.loads(text):
             kind = r.get("kind")
             mime = kind.get("mime") if isinstance(kind, dict) else None
@@ -564,6 +587,7 @@ class Engine:
         res = {"hide_selectors": [], "procedural_actions": [], "exceptions": [], "injected_script": "", "generichide": False}
         if not host or scheme not in ("http", "https"):
             return res
+        res["injected_script"] = self.sc.script_for(url)
         url_l = url.lower()
         flag = self.hide_flags.first_match(url, url_l, host, host, False, T_DOC)
         if flag is not None and flag.special == "elemhide":

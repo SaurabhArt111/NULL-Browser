@@ -150,7 +150,7 @@ def run(app, outdir):
     QTimer.singleShot(WATCHDOG_MS, lambda: (print("WATCHDOG: self-test exceeded its time budget", flush=True), app.qapp.exit(3)))
     try:
         os.makedirs(outdir, exist_ok=True)
-        _run(app, outdir)
+        (_stress if os.environ.get("NULL_SELFTEST_STRESS") else _run)(app, outdir)
     except Exception:
         traceback.print_exc()
         ok("selftest crashed", False, traceback.format_exc()[-300:])
@@ -164,6 +164,60 @@ def run(app, outdir):
 def shot(w, outdir, name):
     QTest.qWait(500)
     w.grab().save(os.path.join(outdir, name + ".png"))
+
+
+def _stress(app, outdir):
+    """Developer stress test (NULL_SELFTEST_STRESS=1): hammer tabs, navigation, resizing and windows for a while; passing = no crash."""
+    import random
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest as T
+    srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), H)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    rnd = random.Random(5)
+    w = app.windows[0]
+    w.resize(1280, 820)
+    fm = app.adblock.filters
+    wait_until(lambda: fm.engine is not None and not fm.building, 60000)
+    pages = ["/cosmetic.html", "/netfilter.html", "/ads.html", "/settings", "/history"]
+    end = time.time() + float(os.environ.get("NULL_SELFTEST_STRESS_SECONDS", "60"))
+    n = 0
+    while time.time() < end:
+        n += 1
+        act = rnd.random()
+        w = app.windows[-1] if app.windows else None
+        if w is None:
+            break
+        if act < 0.30 and len(w.tabs) < 12:
+            w.new_tab(base + rnd.choice(pages[:3]) + "?%d" % n)
+        elif act < 0.45 and len(w.tabs) > 1:
+            w.close_tab_index(rnd.randrange(len(w.tabs)))
+        elif act < 0.65:
+            t = w.current()
+            if t:
+                t.view.load(__import__("PyQt6.QtCore", fromlist=["QUrl"]).QUrl(base + rnd.choice(pages[:3]) + "?%d" % n))
+        elif act < 0.80:
+            w.resize(rnd.randint(500, 1500), rnd.randint(400, 950))
+            w.begin_live_resize()
+            T.qWait(rnd.randint(5, 60))
+            w.end_live_resize()
+        elif act < 0.86:
+            w.toggle_maximized()
+        elif act < 0.92 and len(app.windows) < 3:
+            app.new_window(private=rnd.random() < 0.5, show=True)
+        elif act < 0.96 and len(app.windows) > 1:
+            app.windows[-1].close()
+        else:
+            t = w.current()
+            if t:
+                wid = t.view
+                T.mouseClick(wid.focusProxy() or wid, Qt.MouseButton.MiddleButton, pos=QPoint(200, 200))
+        T.qWait(rnd.randint(10, 120))
+    wait_until(lambda: False, 1500)
+    ok("stress: %d random actions without a crash" % n, True)
+    ok("stress: no unhandled errors captured", len(__import__("null_browser.core.crash", fromlist=["x"]).ERRORS) == 0,
+       str([e["title"] for e in __import__("null_browser.core.crash", fromlist=["x"]).ERRORS][:3]))
 
 
 def _run(app, outdir):
@@ -181,6 +235,9 @@ def _run(app, outdir):
     print("INFO ad-block engine:", fm.message, flush=True)
     ok("filter engine is ready", ready and fm.rules > 1000, f"{fm.message} rules={fm.rules}")
     ok("engine blocks a known ad host from the real lists", fm.engine.check("https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js", "https://example.com/", "script")[0])
+    yt = fm.engine.cosmetic("https://www.youtube.com/watch?v=x")["injected_script"]
+    ok("YouTube ad scriptlets are injected (adPlacements pruning)", "adPlacements" in yt and "try {" in yt, f"{len(yt)} chars")
+    ok("generic cosmetic lookup works on this engine", isinstance(fm.engine.hidden_class_id_selectors(["adsbygoogle"], [], []), list))
     ok("engine allows a normal first-party script", not fm.engine.check("https://example.com/app.js", "https://example.com/", "script")[0])
 
     # ---- internal pages render ------------------------------------------------------------------

@@ -39,6 +39,8 @@ navigations), cosmetic rules (`##.ad-box`, `#@#` exceptions, generic and per-sit
   2. `adblock` wheel from PyPI (the same Brave engine, prebuilt for Windows/macOS/Linux). `setup_and_run.bat` installs it. No compiler needed.
   3. `pyabp`: a pure-Python engine written for this project, so privacy never depends on a compiler or a wheel. It supports the common ~95% of the syntax,
      is roughly 20x slower than Rust, and skips heavy lists (it logs what it skipped).
+  All three run the same uBlock scriptlets (`core/scriptlets.py` does this for tiers 2 and 3), which is what blocks **YouTube ads**: they are part of the
+  player's own data, so only scriptlets (not network rules) can remove them. The weekly list update takes uBlock's lists from GitHub (`raw.githubusercontent.com`).
   The active engine and rule count are shown in Settings → Privacy. The compiled engine is cached, so later starts take a fraction of a second.
 - On Rust vs Python the two engines gave identical verdicts on 20,000 real-world requests (a differential test run during development; the harness is not shipped).
 
@@ -54,6 +56,12 @@ single-arrow cursors in 8 directions (`ui/autoscroll.py`). HiDPI-crisp.
   Shutdown now stops it before restarting, the new process waits for the old one to exit (`--wait-pid`), and the unused `--delay` argument is handled.
 - *"Window enhancements: off" stuck forever*: the fail-safe marker now lasts three starts, then the enhancements are tried again (and the old marker from a previous version is cleared).
 - *GLES3 `ContextResult::kFatalFailure` spam*: that is Chromium's software-GL fallback logging in safe mode (`--disable-gpu`). It is harmless and now silenced unless you run with `--debug`.
+
+## If it crashes or flickers (Windows)
+
+Run `python main.py --debug` from `Search_Engine\Null Browser` and keep the window open, then send the last 30 lines plus `logs\native-crash.log` (Settings → System →
+*Open data folder*); a native crash always leaves a traceback there. To find which part is responsible, try in this order:
+`--classic` (no window effects at all), `--no-native-frame` (animations but no Windows frame), `--safe-mode` (also no GPU). Whichever one stops the problem names the cause.
 
 ## What is the `x/` folder?
 

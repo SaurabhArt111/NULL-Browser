@@ -250,7 +250,7 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
                 self._count(first)
             elif rewritten and rewritten != full:
                 info.redirect(QUrl(rewritten))           # tracking parameters removed ($removeparam)
-        except Exception:                                # never let the interceptor throw
+        except BaseException:                            # never let anything escape into Chromium's IO thread (a Rust panic is a BaseException)
             log.debug("interceptor error", exc_info=True)
 
     def _stub_url(self, data_url):

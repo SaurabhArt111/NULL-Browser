@@ -14,6 +14,7 @@ the compiled engine on disk, and swaps it in atomically so browsing is never blo
 import hashlib
 import json
 import logging
+import marshal
 import os
 import sys
 import threading
@@ -23,6 +24,7 @@ from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from . import paths, pyabp
+from .scriptlets import Scriptlets
 
 log = logging.getLogger("null.adblock")
 
@@ -30,8 +32,9 @@ PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUNDLED = os.path.join(PKG, "data", "filters")
 NATIVE_DIR = os.path.join(PKG, "_native")                  # build_native.bat / .sh copy the compiled module here
 RESOURCES_FILE = "brave-resources.json"
+CACHE_FORMAT = 2                                           # bump when the cached engine layout changes
 
-UBO = "https://ublockorigin.github.io/uAssets/filters/"
+UBO = "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/"
 # kind: ads | trackers | mixed | security.  `heavy` lists are off by default on the slow pure-Python engine.
 CATALOG = [
     dict(id="easylist", title="EasyList", file="easylist.txt", url="https://easylist.to/easylist/easylist.txt", kind="ads",
@@ -42,13 +45,13 @@ CATALOG = [
          desc="Brave's own ad and tracker rules, scriptlets and fixes (bundled snapshot)"),
     dict(id="brave-unbreak", title="Brave unbreak", file="brave-unbreak.txt", url=None, kind="mixed",
          desc="Exceptions that keep popular sites working (bundled snapshot)"),
-    dict(id="ubo", title="uBlock filters", file="ubo-filters.txt", url=UBO + "filters.min.txt", kind="mixed", heavy=True,
+    dict(id="ubo", title="uBlock filters", file="ubo-filters.txt", url=UBO + "filters.txt", kind="mixed", heavy=True,
          desc="uBlock Origin's own filters: ads, pop-ups, anti-adblock, video ads"),
-    dict(id="ubo-unbreak", title="uBlock unbreak", file="ubo-unbreak.txt", url=UBO + "unbreak.min.txt", kind="mixed",
+    dict(id="ubo-unbreak", title="uBlock unbreak", file="ubo-unbreak.txt", url=UBO + "unbreak.txt", kind="mixed",
          desc="Fixes for sites broken by the other lists"),
-    dict(id="ubo-badware", title="Badware risks", file="ubo-badware.txt", url=UBO + "badware.min.txt", kind="security",
+    dict(id="ubo-badware", title="Badware risks", file="ubo-badware.txt", url=UBO + "badware.txt", kind="security",
          desc="Known malicious, scam and phishing hosts"),
-    dict(id="ubo-resource-abuse", title="Resource abuse", file="ubo-resource-abuse.txt", url=UBO + "resource-abuse.min.txt", kind="security",
+    dict(id="ubo-resource-abuse", title="Resource abuse", file="ubo-resource-abuse.txt", url=UBO + "resource-abuse.txt", kind="security",
          desc="Sites that abuse your CPU or hijack your browser"),
     dict(id="coin-miners", title="Crypto-miners", file="coin-miners.txt", url=None, kind="security",
          desc="Blocks in-browser cryptocurrency miners (bundled snapshot)"),
@@ -59,10 +62,14 @@ UPDATE_EVERY = 7 * 24 * 3600
 
 # ------------------------------------------------------------------------------------------------ engine back-ends
 class PypiEngine:
-    """Adapter that makes the PyPI `adblock` wheel look like `null_adblock.Engine`."""
+    """Adapter that makes the PyPI `adblock` wheel look like `null_adblock.Engine`.
 
-    def __init__(self, engine, mod):
-        self._e, self._m = engine, mod
+    The wheel is an older adblock-rust: it matches network and cosmetic rules well but cannot assemble the newer uBlock
+    scriptlets (YouTube's ad blocking relies on them), so `core.scriptlets` does that part and the two are combined here.
+    """
+
+    def __init__(self, engine, mod, sc=None):
+        self._e, self._m, self._sc = engine, mod, sc or Scriptlets()
 
     @staticmethod
     def make(mod):
@@ -70,22 +77,33 @@ class PypiEngine:
             @staticmethod
             def from_lists(lists, debug=False):
                 fs = mod.FilterSet(debug)
+                sc = Scriptlets()
                 for text, fmt in lists:
                     fs.add_filter_list(text, fmt)
-                return _E(mod.Engine(fs), mod)
+                    if fmt == "standard":
+                        sc.add_lines(text)
+                sc.finish()
+                return _E(mod.Engine(fs), mod, sc)
 
             @staticmethod
             def from_serialized(data):
+                d = marshal.loads(bytes(data))
+                if d.get("v") != 2:
+                    raise ValueError("unknown cache format")
                 e = mod.Engine(mod.FilterSet())
-                e.deserialize(bytes(data))
-                return _E(e, mod)
+                e.deserialize(d["engine"])
+                sc = Scriptlets()
+                sc.raw = [tuple(x) for x in d["sc"]]
+                sc.finish()
+                return _E(e, mod, sc)
         return _E
 
     def serialize(self):
-        return bytes(self._e.serialize())
+        return marshal.dumps({"v": 2, "engine": bytes(self._e.serialize()), "sc": self._sc.raw})
 
     def add_resources_json(self, text):
         n = 0
+        self._sc.set_resources(text)
         for r in json.loads(text):
             kind = r.get("kind")
             ctype = kind.get("mime") if isinstance(kind, dict) else kind
@@ -108,10 +126,10 @@ class PypiEngine:
     def cosmetic(self, url):
         r = self._e.url_cosmetic_resources(url)
         return {"hide_selectors": sorted(r.hide_selectors), "procedural_actions": [], "exceptions": sorted(r.exceptions),
-                "injected_script": r.injected_script or "", "generichide": bool(r.generichide)}
+                "injected_script": self._sc.script_for(url), "generichide": bool(r.generichide)}
 
     def hidden_class_id_selectors(self, classes, ids, exceptions):
-        return list(self._e.hidden_class_id_selectors(classes, ids, list(exceptions)))
+        return list(self._e.hidden_class_id_selectors(list(classes), list(ids), set(exceptions)))   # the wheel insists on a set
 
 
 class Backend:
@@ -243,13 +261,19 @@ class FilterManager(QObject):
             except Exception:                                         # noqa: BLE001
                 log.exception("no ad-block engine could be loaded")
         sources = []
+        chosen = self.settings.get("adblock_lists") or {}
         for c in CATALOG:
+            mode = "standard"
             if not self.enabled(c):
-                continue
+                # the big lists are too heavy for the pure-Python matcher, but their scriptlets (YouTube ad blocking ...) are cheap
+                if c.get("heavy") and self.backend is not None and self.backend.name == "python" and c["id"] not in chosen:
+                    mode = "scriptlets"
+                else:
+                    continue
             p, _src = self.list_path(c)
             if p:
                 st = os.stat(p)
-                sources.append((c["id"], p, st.st_size, st.st_mtime_ns))
+                sources.append((c["id"], p, st.st_size, st.st_mtime_ns, mode))
         custom = self._custom_text
         threading.Thread(target=self._build, args=(sources, custom, prefer, self.backend), daemon=True, name="adblock-build").start()
         self.changed.emit()
@@ -260,7 +284,7 @@ class FilterManager(QObject):
             backend = backend or load_backend(prefer)
             res_path = os.path.join(BUNDLED, RESOURCES_FILE)
             res_stat = os.stat(res_path) if os.path.isfile(res_path) else None
-            sig = hashlib.sha256(json.dumps([backend.name, backend.version, sources, hashlib.sha1(custom.encode()).hexdigest(),
+            sig = hashlib.sha256(json.dumps([CACHE_FORMAT, backend.name, backend.version, sources, hashlib.sha1(custom.encode()).hexdigest(),
                                              res_stat and [res_stat.st_size, res_stat.st_mtime_ns]]).encode()).hexdigest()
             cache_dir = os.path.join(self.user_dir(), "cache")
             os.makedirs(cache_dir, exist_ok=True)
@@ -279,10 +303,10 @@ class FilterManager(QObject):
             except (OSError, ValueError, RuntimeError, Exception):          # noqa: BLE001 - a bad cache just means rebuild
                 engine = None
             if engine is None:
-                lists = [(_read(p), "standard") for _id, p, _s, _m in sources]
+                lists = [(_read(p), mode) for _id, p, _s, _m, mode in sources]
                 if custom.strip():
                     lists.append((custom, "standard"))
-                rules = sum(1 for text, _f in lists for ln in text.splitlines() if ln and ln[0] not in "![#")
+                rules = sum(1 for text, _f in lists if _f == "standard" for ln in text.splitlines() if ln and ln[0] not in "![#")
                 engine = backend.cls.from_lists(lists)
                 try:
                     blob = engine.serialize()

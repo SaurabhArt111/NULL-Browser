@@ -7,7 +7,7 @@ window as far as Windows is concerned:
   maximise animations, rounded corners (Windows 11) and Aero Snap, drag-to-restore from maximised, Aero Shake etc. work.
 * WM_NCCALCSIZE makes the whole window our client area, and fixes the maximised rectangle so it never hides behind
   (or covers) the taskbar.
-* WM_ERASEBKGND fills uncovered areas with the theme colour, so dragging an edge never flashes black / white while Chromium
+* WM_ERASEBKGND fills uncovered areas with the theme colour (only while an edge is being dragged), so dragging an edge never flashes black / white while Chromium
   catches up with the new size; WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE tell the window a live resize is running so it can defer
   expensive work (bookmarks bar rebuild, page fade) until the drag ends.
 * DWM is asked for rounded corners on Windows 11 (squared automatically when maximised / snapped).
@@ -184,8 +184,8 @@ def set_background(window, color):
 
 def _erase_background(win, m):
     brush = getattr(win, "_bg_brush", None)
-    if not brush:
-        return False, 0
+    if not brush or not getattr(win, "_live_resize", False):
+        return False, 0                  # only while an edge is being dragged; at any other time Qt's own painting is left alone (no flicker)
     u = _user32()
     u.FillRect.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), ctypes.c_void_p]
     u.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
