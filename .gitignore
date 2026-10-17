@@ -35,3 +35,7 @@ Desktop.ini
 .idea/
 
 x/
+# Rust build output
+native/**/target/
+native/dist/
+**/_native/

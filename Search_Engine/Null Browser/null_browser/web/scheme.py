@@ -95,6 +95,11 @@ class NullSchemeHandler(QWebEngineUrlSchemeHandler):
         path = url.path() or "/"
         query = {k: v[-1] for k, v in parse_qs(url.query()).items()}
 
+        if host == "stub":                                      # ad-block redirect resources ($redirect=noopjs ...): inert stand-ins for blocked files
+            found = self.app.adblock.stub(path.strip("/"))
+            if found is None:
+                return job.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
+            return self._reply(job, found[1], found[0], extra={"Cache-Control": "max-age=3600", "Access-Control-Allow-Origin": "*"})
         if path.startswith("/api/"):
             return self._api(job, path[5:], query)
         if path.startswith("/_/"):

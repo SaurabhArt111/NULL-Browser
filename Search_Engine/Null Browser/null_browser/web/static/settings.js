@@ -45,14 +45,26 @@
   };
   R.privacy = () => {
     const rules = h("div", { class: "card", style: "margin-bottom:14px" });
-    const ruleIn = h("input", { type: "text", placeholder: "ads.example.com  or  ||tracker.example.net^", style: "width:300px" });
+    const ruleIn = h("input", { type: "text", placeholder: "ads.example.com   ||tracker.net^   site.com##.banner", style: "width:300px" });
     async function loadRules() {
       const a = await api("adblock/info"); rules.innerHTML = "";
-      rules.append(h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, "Custom block rules"), h("div", { class: "sub" }, `${a.rules_total} rules loaded, ${a.blocked_total} requests blocked this session`)), ruleIn, h("button", { class: "btn", onclick: async () => { if (!ruleIn.value.trim()) return; const r = await api("adblock/add_rule", { rule: ruleIn.value }); if (!r.rule) return toast("Not a valid domain rule"); ruleIn.value = ""; loadRules(); } }, "Add")));
+      rules.append(h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, "Custom block rules"), h("div", { class: "sub" }, "A domain, or any Adblock Plus / uBlock Origin filter (blocking rules, exceptions with @@, hiding rules with ##)")), ruleIn, h("button", { class: "btn", onclick: async () => { if (!ruleIn.value.trim()) return; const r = await api("adblock/add_rule", { rule: ruleIn.value }); if (!r.rule) return toast("Not a valid domain or filter rule"); ruleIn.value = ""; loadRules(); } }, "Add")));
       a.custom.forEach(r => rules.append(h("div", { class: "row", style: "min-height:44px" }, h("div", { class: "grow ellipsis" }, r), h("button", { class: "btn icon ghost", title: "Remove rule", "data-hint": "Stop blocking this pattern", html: icon("x", "sm"), onclick: async () => { await api("adblock/remove_rule", { rule: r }); loadRules(); } }))));
       a.allow.forEach(r => rules.append(h("div", { class: "row", style: "min-height:44px" }, h("div", { class: "grow ellipsis" }, h("span", { class: "badge ok" }, "ads allowed"), "  " + r), h("button", { class: "btn icon ghost", title: "Block ads here again", "data-hint": "Remove this exception", html: icon("x", "sm"), onclick: async () => { await api("adblock/allow", { host: r, allow: false }); loadRules(); } }))));
     }
     loadRules();
+    const lists = h("div", { class: "card", style: "margin-bottom:14px" });
+    const fmtDate = t => t ? new Date(t * 1000).toLocaleDateString() : "bundled";
+    async function loadLists() {
+      const a = await api("adblock/info"); lists.innerHTML = "";
+      const status = a.building ? "Building the filter engine…" : a.updating ? "Updating lists…" : a.update_error ? "Last update problem: " + a.update_error : "Lists last updated: " + (a.last_update ? new Date(a.last_update * 1000).toLocaleString() : "never (using the bundled snapshot)");
+      lists.append(h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, "Filter engine"), h("div", { class: "sub" }, `${a.rules_total.toLocaleString()} rules · ${a.blocked_total.toLocaleString()} requests blocked this session` + (a.redirected_total ? ` (${a.redirected_total} replaced by safe stubs)` : ""))), h("span", { class: "badge ok" }, a.backend)));
+      a.lists.forEach(l => lists.append(switchRow(l.title, `${l.desc} · ${l.source === "updated" ? "updated " + fmtDate(l.updated) : "bundled snapshot"}` + (l.heavy && a.backend.startsWith("Python") ? " · slow on the Python engine" : ""), l.enabled, async v => { await api("adblock/set_list", { id: l.id, on: v }); setTimeout(loadLists, 600); })));
+      lists.append(h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, "Update filter lists"), h("div", { class: "sub" }, status)),
+        h("button", { class: "btn", onclick: async () => { await api("adblock/update"); toast("Updating filter lists…"); setTimeout(loadLists, 1500); setTimeout(loadLists, 6000); } }, "Update now"),
+        h("button", { class: "btn ghost", onclick: async () => { await api("adblock/reset_lists"); toast("Back to the bundled lists"); setTimeout(loadLists, 800); } }, "Use bundled")));
+    }
+    loadLists();
     const exit = new Set(S.clear_on_exit || []);
     return [h("h1", {}, "Privacy and security"),
       card(actionRow("Clear browsing data", "Delete history, cookies, cache and more", "Clear data…", () => clearBrowsingDialog())),
@@ -61,6 +73,9 @@
       h("h2", {}, "Tracking protection"),
       card(switchRow("Block ads", "Built-in ad blocker (works without extensions)", S.adblock, v => set("adblock", v)),
         switchRow("Block trackers", "Analytics and tracking scripts loaded from other sites", S.block_trackers, v => set("block_trackers", v)),
+        switchRow("Hide leftover ads and stop anti-adblock scripts", "Cosmetic filtering: removes empty ad boxes and runs the filter lists' scriptlets (like Brave Shields)", S.adblock_cosmetic !== false, v => set("adblock_cosmetic", v)),
+        switchRow("Protect my IP address from WebRTC", "Web pages can only use your public network interface, so video-call scripts cannot read your local network address", S.webrtc_ip_protect !== false, v => set("webrtc_ip_protect", v)),
+        switchRow("Update filter lists weekly", "Downloads fresh EasyList / EasyPrivacy / uBlock lists from their original sites about once a week. Turn off to stay fully offline.", S.adblock_auto_update !== false, v => set("adblock_auto_update", v)),
         switchRow("Send “Do Not Track” and Global Privacy Control", "Asks sites not to sell or share your data", S.send_dnt, v => set("send_dnt", v)),
         link("Third-party cookies", "Currently: " + D.perm_defaults.cookies_label, "null://settings/content/cookies")),
       h("h2", {}, "Security"),
@@ -69,7 +84,7 @@
       h("h2", {}, "Clear on exit"),
       card(h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, "Delete when Null Browser closes"), h("div", { class: "sub" }, "Choose what is wiped automatically")),
         h("div", { class: "chips" }, [["history", "History"], ["cookies", "Cookies"], ["cache", "Cache"], ["downloads", "Download list"]].map(([k, l]) => h("label", { class: "badge", style: "cursor:pointer;display:flex;gap:6px;align-items:center;padding:5px 10px" }, h("input", { type: "checkbox", checked: exit.has(k), onchange: e => { e.target.checked ? exit.add(k) : exit.delete(k); set("clear_on_exit", [...exit]); } }), l))))),
-      h("h2", {}, "Ad blocker rules"), rules];
+      h("h2", {}, "Filter lists"), lists, h("h2", {}, "Your own rules"), rules];
   };
   R.content = () => {
     const cat = D.catalog; const groups = [["Permissions", "Permissions"], ["Content", "Content"], ["Additional", "Additional content settings"]];

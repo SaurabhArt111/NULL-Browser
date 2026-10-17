@@ -6,7 +6,7 @@ import time
 from urllib.parse import urlsplit
 
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QActionGroup, QCursor, QDesktopServices, QIcon, QImage, QKeySequence, QPixmap
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QCursor, QDesktopServices, QIcon, QImage, QKeySequence, QPixmap
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu, QMessageBox, QProgressBar, QSizePolicy, QStackedWidget,
                              QToolButton, QVBoxLayout, QWidget, QWidgetAction, QApplication)
 
@@ -57,6 +57,8 @@ class MainWindow(QMainWindow):
         self._resize_edges = Qt.Edge(0)
         self._hint = None
         self._native_frame = False                        # True once Windows treats us as a real resizable window
+        self._live_resize = False                         # True while Windows runs the drag-resize / move loop
+        self._bg_brush = None                             # GDI brush the native frame paints uncovered areas with
         self.snap_layouts = False                         # Windows 11 Snap Layouts flyout on the maximise button
         self._bm_timer = QTimer(self, singleShot=True, interval=70, timeout=lambda: self.refresh_bookmarks())
         self._update_border()
@@ -279,6 +281,7 @@ class MainWindow(QMainWindow):
             t.find.restyle()
         self.private_badge.setVisible(self.private)
         native.set_dark_titlebar(self, p["dark"])
+        winframe.set_background(self, QColor(p["bar"]))
         self.refresh_bookmarks()
         self.update_toolbar_state()
 
@@ -1046,6 +1049,7 @@ class MainWindow(QMainWindow):
             self._native_frame = True
             self.snap_layouts = winframe.supports_snap_layouts()
             self._update_border()
+            winframe.set_background(self, QColor(self.pal["bar"]))
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -1060,6 +1064,17 @@ class MainWindow(QMainWindow):
         # With the native frame Windows owns the resize edges, so no margin is needed (and no gap shows around the page).
         b = 0 if (self._native_frame or self.isMaximized() or self.isFullScreen()) else self.BORDER
         self.setContentsMargins(b, b, b, b)
+
+    def begin_live_resize(self):
+        """Windows is running a drag-resize / move loop: keep the window cheap to repaint until it ends."""
+        self._live_resize = True
+        if self.veil is not None:
+            self.veil.hide()
+
+    def end_live_resize(self):
+        self._live_resize = False
+        self._bm_timer.start()                            # the bookmarks bar is rebuilt once, after the drag
+        self.update()
 
     def toggle_maximized(self):
         if self.isFullScreen():

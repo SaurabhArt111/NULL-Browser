@@ -161,8 +161,12 @@ def mark_startup_ok():
 
 
 def restart_app(extra_args=None):
-    """Start a fresh copy of the browser (detached). Works for `python -m null_browser`, run.py and frozen builds."""
-    rest = [a for a in sys.argv[1:] if a not in ("--safe-mode", "--selftest") and not a.startswith("--delay")] + ["--delay=1.5"] + list(extra_args or [])
+    """Start a fresh copy of the browser (detached). Works for `python -m null_browser`, run.py and frozen builds.
+
+    The new process gets `--wait-pid=<this pid>` and waits (up to a few seconds) until this one has really exited, so the
+    single-instance check, the data folder lock and the local search port are free when it starts."""
+    skip = ("--safe-mode", "--selftest", "--delay", "--wait-pid")
+    rest = [a for a in sys.argv[1:] if not a.startswith(skip)] + [f"--wait-pid={os.getpid()}"] + list(extra_args or [])
     if getattr(sys, "frozen", False):
         program, args, cwd = sys.executable, rest, ""
     else:
@@ -170,3 +174,28 @@ def restart_app(extra_args=None):
         cwd = os.path.dirname(paths.package_dir())
     log.info("Restarting: %s %s (cwd=%s)", program, args, cwd)
     QProcess.startDetached(program, args, cwd)
+
+
+def wait_for_pid(pid, timeout=10.0):
+    """Block until process `pid` has exited (or `timeout` seconds pass). Used by a restarted copy."""
+    deadline = time.time() + timeout
+    if sys.platform.startswith("win"):
+        import ctypes
+        SYNCHRONIZE = 0x00100000
+        k32 = ctypes.windll.kernel32
+        k32.OpenProcess.restype = ctypes.c_void_p
+        h = k32.OpenProcess(SYNCHRONIZE, False, int(pid))
+        if not h:
+            return True                                   # already gone
+        try:
+            k32.WaitForSingleObject(ctypes.c_void_p(h), int(max(0.0, deadline - time.time()) * 1000))
+        finally:
+            k32.CloseHandle(ctypes.c_void_p(h))
+        return True
+    while time.time() < deadline:
+        try:
+            os.kill(int(pid), 0)
+        except OSError:
+            return True
+        time.sleep(0.05)
+    return False

@@ -7,6 +7,10 @@ window as far as Windows is concerned:
   maximise animations, rounded corners (Windows 11) and Aero Snap, drag-to-restore from maximised, Aero Shake etc. work.
 * WM_NCCALCSIZE makes the whole window our client area, and fixes the maximised rectangle so it never hides behind
   (or covers) the taskbar.
+* WM_ERASEBKGND fills uncovered areas with the theme colour, so dragging an edge never flashes black / white while Chromium
+  catches up with the new size; WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE tell the window a live resize is running so it can defer
+  expensive work (bookmarks bar rebuild, page fade) until the drag ends.
+* DWM is asked for rounded corners on Windows 11 (squared automatically when maximised / snapped).
 * WM_NCHITTEST tells Windows which part of our own UI is "caption" (empty tab-strip space), "border" (resize edges) and,
   on Windows 11, "maximise button" (this is what makes the Snap Layouts flyout appear when hovering the button).
 
@@ -27,6 +31,7 @@ IS_WIN = sys.platform.startswith("win")
 # window messages
 WM_NCCALCSIZE, WM_NCHITTEST, WM_NCMOUSEMOVE = 0x0083, 0x0084, 0x00A0
 WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE = 0x00A1, 0x00A2, 0x02A2
+WM_ERASEBKGND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE = 0x0014, 0x0231, 0x0232
 # hit-test results
 HTCLIENT, HTCAPTION, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT = 1, 2, 10, 11, 12, 13, 14
 HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTMAXBUTTON = 15, 16, 17, 9
@@ -36,6 +41,8 @@ WS_CAPTION, WS_THICKFRAME, WS_MINIMIZEBOX, WS_MAXIMIZEBOX, WS_SYSMENU = 0x00C000
 SWP_NOSIZE, SWP_NOMOVE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED = 0x0001, 0x0002, 0x0004, 0x0010, 0x0020
 MONITOR_DEFAULTTONEAREST = 2
 ABM_GETSTATE, ABS_AUTOHIDE = 0x4, 0x1
+DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND = 33, 2
+EDGE, CORNER = 6, 14                                   # resize border thickness / corner reach, in logical px
 
 
 class _MARGINS(ctypes.Structure):
@@ -84,7 +91,8 @@ class _Filter(QAbstractNativeEventFilter):
     (Overriding `nativeEvent` on the window itself crashed PyQt6 6.11 on Windows while the native window was being
     created, so no Python runs for a window until `install()` has registered it, after the window exists.)
     """
-    HANDLED = frozenset((WM_NCCALCSIZE, WM_NCHITTEST, WM_NCMOUSEMOVE, WM_NCMOUSELEAVE, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP))
+    HANDLED = frozenset((WM_NCCALCSIZE, WM_NCHITTEST, WM_NCMOUSEMOVE, WM_NCMOUSELEAVE, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
+                         WM_ERASEBKGND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE))
 
     def __init__(self):
         super().__init__()
@@ -144,11 +152,47 @@ def install(window):
         # 1px of "glass" is what makes the DWM draw the drop shadow around a window without a visible frame
         margins = _MARGINS(1, 1, 1, 1)
         ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(wintypes.HWND(hwnd), ctypes.byref(margins))
+        try:                                               # Windows 11: rounded corners (ignored by Windows 10)
+            pref = ctypes.c_int(DWMWCP_ROUND)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(wintypes.HWND(hwnd), DWMWA_WINDOW_CORNER_PREFERENCE, ctypes.byref(pref), ctypes.sizeof(pref))
+        except Exception:
+            log.debug("corner preference", exc_info=True)
         u.SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED)
         return True
     except Exception:
         log.warning("native frame set-up failed; using the Qt fallback", exc_info=True)
         return False
+
+
+def set_background(window, color):
+    """Colour (QColor) painted into any part of the window Qt has not drawn yet (live resize, first show)."""
+    if not IS_WIN or registered_hwnd(window) is None:
+        return
+    try:
+        gdi = ctypes.windll.gdi32
+        gdi.CreateSolidBrush.restype = ctypes.c_void_p
+        gdi.CreateSolidBrush.argtypes = [wintypes.DWORD]
+        gdi.DeleteObject.argtypes = [ctypes.c_void_p]
+        brush = gdi.CreateSolidBrush(color.red() | (color.green() << 8) | (color.blue() << 16))
+        old = getattr(window, "_bg_brush", None)
+        window._bg_brush = brush
+        if old:
+            gdi.DeleteObject(old)
+    except Exception:
+        log.debug("set_background", exc_info=True)
+
+
+def _erase_background(win, m):
+    brush = getattr(win, "_bg_brush", None)
+    if not brush:
+        return False, 0
+    u = _user32()
+    u.FillRect.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), ctypes.c_void_p]
+    u.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    rc = wintypes.RECT()
+    u.GetClientRect(int(m.hWnd), ctypes.byref(rc))
+    u.FillRect(m.wParam, ctypes.byref(rc), brush)
+    return True, 1
 
 
 def _msg(message):
@@ -190,6 +234,14 @@ def native_event(win, m):
             return True, 0                             # client area == whole window
         if code == WM_NCHITTEST:
             return True, _hit_test(win, m)
+        if code == WM_ERASEBKGND:
+            return _erase_background(win, m)
+        if code == WM_ENTERSIZEMOVE:
+            win.begin_live_resize()
+            return False, 0                            # Qt still sees it
+        if code == WM_EXITSIZEMOVE:
+            win.end_live_resize()
+            return False, 0
         if code == WM_NCMOUSEMOVE and m.wParam == HTMAXBUTTON:
             win.wc.set_max_state(hot=True)
         elif code == WM_NCMOUSELEAVE:
@@ -206,6 +258,36 @@ def native_event(win, m):
     return False, 0
 
 
+def edge_hit(px, py, w, h, dpr):
+    """Resize-border hit test for a point `px, py` (physical pixels, relative to the window) in a `w` x `h` window.
+
+    The border is EDGE logical px thick; the corner zones reach CORNER px along each side, so diagonals are easy to grab.
+    Returns an HT* code, or None for the interior."""
+    b, c = int(round(EDGE * dpr)), int(round(CORNER * dpr))
+    left, right, top, bottom = px < b, px >= w - b, py < b, py >= h - b
+    left = left or (px < c and (py < b or py >= h - b))
+    right = right or (px >= w - c and (py < b or py >= h - b))
+    top = top or (py < c and (px < b or px >= w - b))
+    bottom = bottom or (py >= h - c and (px < b or px >= w - b))
+    if top and left:
+        return HTTOPLEFT
+    if top and right:
+        return HTTOPRIGHT
+    if bottom and left:
+        return HTBOTTOMLEFT
+    if bottom and right:
+        return HTBOTTOMRIGHT
+    if left:
+        return HTLEFT
+    if right:
+        return HTRIGHT
+    if top:
+        return HTTOP
+    if bottom:
+        return HTBOTTOM
+    return None
+
+
 def _hit_test(win, m):
     from PyQt6.QtCore import QPoint
     u = _user32()
@@ -219,28 +301,9 @@ def _hit_test(win, m):
     dpr = max(1.0, win.devicePixelRatioF())
 
     if not (win.isMaximized() or win.isFullScreen()):
-        b, c = int(round(6 * dpr)), int(round(14 * dpr))        # edge thickness / corner reach
-        left, right, top, bottom = px < b, px >= w - b, py < b, py >= h - b
-        left = left or (px < c and (py < b or py >= h - b))
-        right = right or (px >= w - c and (py < b or py >= h - b))
-        top = top or (py < c and (px < b or px >= w - b))
-        bottom = bottom or (py >= h - c and (px < b or px >= w - b))
-        if top and left:
-            return HTTOPLEFT
-        if top and right:
-            return HTTOPRIGHT
-        if bottom and left:
-            return HTBOTTOMLEFT
-        if bottom and right:
-            return HTBOTTOMRIGHT
-        if left:
-            return HTLEFT
-        if right:
-            return HTRIGHT
-        if top:
-            return HTTOP
-        if bottom:
-            return HTBOTTOM
+        hit = edge_hit(px, py, w, h, dpr)
+        if hit is not None:
+            return hit
 
     widget = win.childAt(QPoint(int(px / dpr), int(py / dpr)))
     if widget is None:

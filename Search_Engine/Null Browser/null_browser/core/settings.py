@@ -35,6 +35,11 @@ DEFAULTS = {
     "adblock": True,
     "block_trackers": True,
     "send_dnt": True,
+    "adblock_lists": {},               # filter list id -> bool (absent = default for the engine in use), see core/adblockengine.py
+    "adblock_auto_update": True,       # refresh the updatable filter lists about once a week
+    "adblock_last_update": 0,
+    "adblock_cosmetic": True,          # hide leftover ad containers and run scriptlets (Brave / uBlock style)
+    "webrtc_ip_protect": True,         # WebRTC only uses the public network interface (does not expose your LAN address)
     "https_first": True,
     "clear_on_exit": [],               # subset of: history, cookies, cache, downloads
     "save_site_data": True,            # True (default): cookies, logins and site storage are kept until the user clears them; False = memory only

@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from . import constants as C
 from .core import crash, paths
 from .core.adblock import AdBlocker
+from .core.cosmetic import CosmeticFilter
 from .core.db import Database
 from .core.downloads import DownloadManager
 from .core.engine_service import EngineService
@@ -77,6 +78,11 @@ class BrowserApp(QObject):
         self.perms = PermissionManager(self.db, self.settings)
         self.search = SearchManager(self.settings)
         self.adblock = AdBlocker(self.settings, self.perms, self)
+        self.adblock.safe_mode = safe_mode
+        self.adblock.refresh()
+        self.adblock.cosmetic = CosmeticFilter(self.adblock, self.settings)
+        self._restart_args = None                 # set by restart(): the new copy is started only after this one has cleaned up
+        self._shutdown_done = False
         self.engine = EngineService(self.settings, self)
         self.tray = QSystemTrayIcon(icons.app_icon(), self)
         self.tray.setToolTip(C.APP_NAME)
@@ -309,6 +315,9 @@ class BrowserApp(QObject):
     def start(self, urls, private=False):
         """Open the first window(s) according to startup settings."""
         self.listen_for_instances()
+        if not self.safe:
+            self.adblock.start()                                    # builds / loads the filter engine on a worker thread
+            QTimer.singleShot(25_000, self.adblock.filters.maybe_auto_update)
         if self.settings.get("autostart_null_search"):
             QTimer.singleShot(400, self.engine.start)
         mode = self.settings.get("startup_mode")
@@ -468,9 +477,14 @@ class BrowserApp(QObject):
         v = self.settings.get(key)
         if key in ("theme", "accent"):
             self.apply_theme()
-        elif key in ("adblock", "block_trackers", "send_dnt"):
+        elif key in ("adblock", "block_trackers", "send_dnt", "adblock_cosmetic"):
             self.adblock.refresh()
             self.refresh_shield()
+        elif key == "webrtc_ip_protect":
+            webrtc = getattr(WA, "WebRTCPublicInterfacesOnly", None)
+            if webrtc is not None:
+                for t in self.all_tabs():
+                    t.page.settings().setAttribute(webrtc, bool(v))
         elif key in ("font_size", "min_font_size", "web_dark_mode", "smooth_scrolling"):
             for t in self.all_tabs():
                 self.apply_page_settings(t.page)
@@ -593,8 +607,10 @@ class BrowserApp(QObject):
 
     # ------------------------------------------------------------------ lifecycle
     def restart(self, safe=False):
+        """Quit, then start a fresh copy. The new copy is launched at the very end of shutdown() (after the search engine
+        child process and the profile have been closed) and waits for this process id to disappear, so the two never overlap."""
+        self._restart_args = ["--safe-mode"] if safe else []
         self._shutting_down = True
-        crash.restart_app(["--safe-mode"] if safe else None)
         self.qapp.quit()
 
     def quit(self):
@@ -603,8 +619,9 @@ class BrowserApp(QObject):
 
     @crash.guarded(quiet=True)
     def shutdown(self):
-        if self._shutting_down and not self.windows:
+        if self._shutdown_done:
             return
+        self._shutdown_done = True
         self._shutting_down = True
         self.save_session()
         for key in self.settings.get("clear_on_exit") or []:
@@ -623,3 +640,5 @@ class BrowserApp(QObject):
             pass
         crash.mark_startup_ok()
         log.info("Clean shutdown")
+        if self._restart_args is not None:
+            crash.restart_app(self._restart_args)

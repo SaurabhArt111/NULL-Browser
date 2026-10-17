@@ -89,9 +89,13 @@ class EngineService(QObject):
         self._stopping = True                               # Qt reports our own terminate() as ProcessError.Crashed
         self.timer.stop()
         if self.proc and self.proc.state() != QProcess.ProcessState.NotRunning:
-            self.proc.terminate()
+            if sys.platform.startswith("win"):
+                self.proc.kill()                            # terminate() only posts WM_CLOSE, which a console-less python ignores
+            else:
+                self.proc.terminate()
             if not self.proc.waitForFinished(1500):
                 self.proc.kill()
+                self.proc.waitForFinished(1000)
         self.proc = None
         self._set("stopped")
 

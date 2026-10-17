@@ -355,7 +355,30 @@ def newtab_clear_bg(app, p, private):
 @route("adblock/info")
 def adblock_info(app, p, private):
     a = app.adblock
-    return {"custom": sorted(a.custom), "allow": sorted(a.allowlist), "rules_total": a.rule_count(), "blocked_total": a.total}
+    fm = a.filters
+    custom = [r[2:-1] if r in {"||" + d + "^" for d in a.custom} else r for r in a.custom_lines]
+    return {"custom": custom, "allow": sorted(a.allowlist), "rules_total": a.rule_count(), "blocked_total": a.total,
+            "redirected_total": a.redirected, "backend": a.backend_label, "building": fm.building, "message": fm.message,
+            "updating": fm.updating, "update_error": fm.update_error, "last_update": fm.last_update(),
+            "lists": fm.lists_info(), "auto_update": bool(app.settings.get("adblock_auto_update")),
+            "cosmetic": bool(app.settings.get("adblock_cosmetic"))}
+
+
+@route("adblock/set_list")
+def adblock_set_list(app, p, private):
+    return {"ok": app.adblock.filters.set_enabled(str(p.get("id", "")), bool(p.get("on")))}
+
+
+@route("adblock/update")
+def adblock_update(app, p, private):
+    app.adblock.filters.update_all()
+    return {"ok": True}
+
+
+@route("adblock/reset_lists")
+def adblock_reset_lists(app, p, private):
+    app.adblock.filters.reset_updates()
+    return {"ok": True}
 
 
 @route("adblock/add_rule")

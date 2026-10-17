@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "null_adblock"
+version = "1.0.0"
+description = "Python bindings for Brave's adblock-rust, used by Null Browser."
+requires-python = ">=3.10"
+license = { text = "MPL-2.0" }
+
+[tool.maturin]
+module-name = "null_adblock"

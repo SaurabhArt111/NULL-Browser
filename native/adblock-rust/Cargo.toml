@@ -1,0 +1,45 @@
+# Vendored copy of Brave's adblock-rust 0.13.3 (https://github.com/brave/adblock-rust), MPL-2.0 (see LICENSE).
+# Modification: the original workspace manifest was reduced to this library-only manifest (no benches, no js/fuzz
+# members, no dev-dependencies); the Rust sources in src/ are unchanged.
+[package]
+name = "adblock"
+version = "0.13.3"
+authors = ["Anton Lazarev <alazarev@brave.com>", "Andrius Aucinas"]
+edition = "2024"
+description = "Native Rust module for Adblock Plus syntax (e.g. EasyList, EasyPrivacy) filter parsing and matching."
+repository = "https://github.com/brave/adblock-rust/"
+license = "MPL-2.0"
+
+[dependencies]
+addr = { version = "0.15", default-features = false, features = ["psl"], optional = true }
+percent-encoding = "2.1"
+regex = "1.12.3"
+bitflags = { version = "2.10.0", features = ["serde"] }
+itertools = "0.14"
+idna = "1.0.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+seahash = "4.1.0"
+rustc-hash = { version = "2.1", default-features = false }
+memchr = "2.8"
+base64 = "0.22"
+arrayvec = "0.7"
+cssparser = { version = "0.35", optional = true }
+selectors = { version = "0.32", optional = true }
+precomputed-hash = { version = "0.1", optional = true }
+thiserror = "1.0"
+flatbuffers = { version = "25.12.19" }
+
+[lib]
+bench = false
+
+[features]
+# `single-thread` is intentionally NOT default here: Null Browser calls the engine from Chromium's IO thread.
+default = ["embedded-domain-resolver", "full-regex-handling"]
+full-regex-handling = []
+single-thread = []
+debug-info = []
+css-validation = ["cssparser", "selectors", "precomputed-hash"]
+content-blocking = []
+embedded-domain-resolver = ["addr"]
+resource-assembler = []

@@ -1,0 +1,3 @@
+# Optional: prebuilt Rust ad-block engine (Brave's adblock-rust packaged for PyPI, abi3 wheels for Windows/macOS/Linux).
+# If it cannot be installed the browser falls back to its built-in Python engine automatically.
+adblock>=0.6.0

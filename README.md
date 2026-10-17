@@ -16,14 +16,62 @@ permissions, ad blocking, error handling, notifications, the search link) is Nul
 | macOS / Linux | `python3 -m venv .venv && . .venv/bin/activate && pip install -r "Search_Engine/Null Browser/requirements.txt" -r "Search_Engine/Null Search Engine/requirements.txt" && python "Search_Engine/Null Browser/main.py"` |
 
 Needs Python 3.10 or newer (3.12 / 3.13 recommended) and an internet connection for the first install. Setup installs prebuilt
-packages only (nothing is compiled, so locked-down PCs work), and Null Search is optional: if its packages can't install,
+packages only (nothing is compiled, so locked-down PCs work; the optional Rust engine is `native\build_native.bat`), and Null Search is optional: if its packages can't install,
 setup counts a warning and the browser still starts. If something misbehaves, run
 `python main.py --debug` (in `Search_Engine/Null Browser`) for verbose logging.
 
-Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--debug] [--new-instance]`.
+Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--debug] [--new-instance] [--wait-pid PID]`.
 `--data-dir` gives a portable profile.
 
-## What's new in this version
+## What's new in this update
+
+**Privacy: a real ad / tracker blocker.** The old domain list is replaced by Brave's **adblock-rust** engine (vendored in `native/adblock-rust`, MPL-2.0),
+driven through `null_browser/core/adblockengine.py`. It understands the full Adblock Plus / uBlock Origin syntax: `$third-party`, `$domain=`, `$important`,
+`$badfilter`, `$redirect` (harmless stand-in scripts/pixels, served from `null://stub/`), `$removeparam` (tracking parameters are stripped, also on page
+navigations), cosmetic rules (`##.ad-box`, `#@#` exceptions, generic and per-site) and uBlock scriptlets.
+
+- **Lists:** EasyList, EasyPrivacy, Brave Main + Unbreak, uBlock filters / unbreak / badware / resource-abuse, coin-miner list. They ship in `null_browser/data/filters/`
+  (so the very first start is already protected, offline) and refresh weekly from their own upstream sites. Turn lists on / off, update now or reset in **Settings → Privacy → Filter lists**.
+- **Your own rules:** any ABP/uBO filter or a plain domain in *Your own rules*.
+- **Cosmetic filtering** (empty ad slots removed) and **WebRTC IP-leak protection** have switches next to the others; DNT and Global Privacy Control are still sent.
+- **Three interchangeable engines, picked automatically (best first):**
+  1. `rust`: our own PyO3 module `null_adblock` (`native/null_adblock`). Build with `native\build_native.bat` (needs Rust). The GIL is released while matching.
+  2. `adblock` wheel from PyPI (the same Brave engine, prebuilt for Windows/macOS/Linux). `setup_and_run.bat` installs it. No compiler needed.
+  3. `pyabp`: a pure-Python engine written for this project, so privacy never depends on a compiler or a wheel. It supports the common ~95% of the syntax,
+     is roughly 20x slower than Rust, and skips heavy lists (it logs what it skipped).
+  The active engine and rule count are shown in Settings → Privacy. The compiled engine is cached, so later starts take a fraction of a second.
+- On Rust vs Python the two engines gave identical verdicts on 20,000 real-world requests (a differential test run during development; the harness is not shipped).
+
+**Window resizing, Windows behaviour (per your Chrome reference).** `ui/winframe.py` now: fills the window with the theme colour while you drag an edge
+(no white / black flash), pauses expensive relayout during the drag and rebuilds once on release, uses 6 px edges and 14 px corners (scaled for DPI) like Chrome,
+asks Windows 11 for rounded corners, and keeps Aero Snap, Snap Layouts on the maximise button and drag-to-restore.
+
+**Cursor.** Middle-click auto-scroll now draws Chrome's anchor (white disc, dark dot, triangles only on the axes that can scroll) and, once you move away, the
+single-arrow cursors in 8 directions (`ui/autoscroll.py`). HiDPI-crisp.
+
+**Fixes from your log.**
+- *Restart / "QProcess: Destroyed while process is still running" / "Engine process error: Crashed"*: the search-engine child was left running when the browser restarted into safe mode.
+  Shutdown now stops it before restarting, the new process waits for the old one to exit (`--wait-pid`), and the unused `--delay` argument is handled.
+- *"Window enhancements: off" stuck forever*: the fail-safe marker now lasts three starts, then the enhancements are tried again (and the old marker from a previous version is cleared).
+- *GLES3 `ContextResult::kFatalFailure` spam*: that is Chromium's software-GL fallback logging in safe mode (`--disable-gpu`). It is harmless and now silenced unless you run with `--debug`.
+
+## What is the `x/` folder?
+
+`Search_Engine/Null Browser/x/` was **runtime data**, not source: the browser's profile from a test run (`browser.db`, `settings.json`, `session.json`, cookies/cache under
+`profile/`, `logs/`, the new-tab wallpaper). It was created by a test run on 14 Oct (Linux) with `--data-dir` pointing at it, and it contains your browsing data,
+so it was **left out of this zip** (it was already listed in `.gitignore`). Safe to delete; the browser recreates it. Normal runs keep their data in your user folder
+(Settings → System → *Open data folder*).
+
+## Licences
+
+Brave adblock-rust: MPL-2.0 (`native/adblock-rust/LICENSE`; modifications: trimmed manifest). Filter lists keep their own licences (`null_browser/data/filters/LICENSES.md`).
+`native/null_adblock` is MPL-2.0 as a derivative binding.
+
+**Windows note.** This update was developed and tested on Linux (headless Qt: 74 of 74 self-test checks, on all three ad-block engines). The Windows-only
+native-frame code, the Windows build of the Rust module and real-mouse feel could not be run there; if something misbehaves, run `python main.py --debug` and
+send `logs/null-browser.log`. The Rust module can also be built for Windows by the included GitHub Actions workflow (`.github/workflows/native-wheels.yml`).
+
+## Earlier changes (3.0)
 
 - **Native window behaviour (Windows).** The frameless window is now a real Windows window underneath: Aero Snap, drag-to-restore from maximised,
   Snap Layouts on the maximise button (Windows 11), drop shadow, rounded corners, edge/corner resizing and the system open / minimise / maximise / close
@@ -70,7 +118,7 @@ Memory Saver (discards inactive tabs), per-site zoom, find in page, print / save
 windows (separate off-the-record profile, dark purple theme, nothing written to disk), single-instance forwarding,
 system-tray mode, a live Chrome-style omnibox (history, bookmarks, search suggestions, `@engine` shortcuts, `?` to force search).
 
-**Ad & tracker blocking:** built-in, no extension needed. Shield button shows blocked count, with a per-site off switch and custom rules.
+**Ad & tracker blocking:** built-in, no extension needed, powered by Brave's adblock-rust (see *What's new in this update*). Shield button shows blocked count, with a per-site off switch and custom rules.
 Sends *Do Not Track* and *Global Privacy Control*.
 
 **Native feel:** Windows taskbar identity and dark title bar, system toast / Notification Center for downloads and for website
@@ -121,7 +169,7 @@ a security boundary against deliberately hostile code. It is off in safe mode.
 `python main.py --selftest OUTDIR` launches the whole browser headless and runs 60+ end-to-end checks (internal pages render
 with no JS errors, address-bar parsing, every shim gate with real prompts, permission persistence, ad blocking, pop-up
 blocking, API-token protection, bookmarks, history, error pages, clean shutdown) and saves screenshots.
-It runs against a throw-away profile; the last run in the Linux build environment passed 67 of 67 checks. Tab tear-off / merge, persistence of
+It runs against a throw-away profile; the last run in the Linux build environment passed 74 of 74 checks. Tab tear-off / merge, persistence of
 cookies across restarts and the Clear-data semantics were verified with separate scripted runs (synthetic mouse events in an offscreen display, so real-mouse feel on Windows is untested).
 The search engine has its own 64 pytest tests (`Null Search Engine/tests`).
 
@@ -139,12 +187,13 @@ bar), but nobody has run it there yet. If the first launch fails, the output of 
 
 ```
 setup_and_run.bat / .sh      one-time setup + launch          run_browser.bat / .sh   daily launcher
+native/                      adblock-rust (vendored) + null_adblock (PyO3 module) + build_native.bat / .sh
 Search_Engine/
   Null Browser/
     main.py                  launcher
     null_browser/
       main.py  app.py        start-up, profiles, policies, session, tray
-      core/                  db, settings, permissions, adblock, downloads, search, engine_service, notify, crash
+      core/                  db, settings, permissions, adblock (+adblockengine, pyabp, cosmetic), downloads, search, engine_service, notify, crash
       ui/                    window, tab, tabbar, tabdrag, omnibox, popups, tips, theme, icons, native
       web/                   null:// scheme handler, JSON API, pages/ and static/ for the built-in pages
       selftest.py            headless end-to-end test

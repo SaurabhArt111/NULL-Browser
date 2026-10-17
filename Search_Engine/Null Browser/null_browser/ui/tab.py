@@ -163,6 +163,9 @@ class Tab(QWidget):
                           (WA.AllowWindowActivationFromJavaScript, False), (WA.HyperlinkAuditingEnabled, False),
                           (WA.LocalContentCanAccessRemoteUrls, False), (WA.LocalContentCanAccessFileUrls, False)):
             s.setAttribute(attr, val)
+        webrtc = getattr(WA, "WebRTCPublicInterfacesOnly", None)
+        if webrtc is not None:
+            s.setAttribute(webrtc, bool(self.app.settings.get("webrtc_ip_protect")))
         self.app.apply_page_settings(self.page)
 
     def _wire(self):
@@ -292,6 +295,9 @@ class Tab(QWidget):
         self.refresh_background(url)
         self.view.pan_cursor.disarm()
         self.view.pan_cursor.attach()
+        cosmetic = getattr(self.app.adblock, "cosmetic", None)
+        if cosmetic is not None:
+            cosmetic.prepare(self.page, url)
 
     def open_external(self, url):
         r = QMessageBox.question(self.window(), "Open external application?",
@@ -429,6 +435,8 @@ class Tab(QWidget):
                 typed = bool(self.typed_url) and url.toString().rstrip("/").startswith(self.typed_url.rstrip("/"))
                 self.typed_url = ""
                 self.app.db.add_visit(url.toString(), self.page.title(), typed)
+            if ok and url.scheme() in ("http", "https") and getattr(self.app.adblock, "cosmetic", None) is not None:
+                self.app.adblock.cosmetic.after_load(self.page)
             if ok and url.host() == "newtab" and url.scheme() == SCHEME:
                 self.focusOmnibox.emit()
             self.securityChanged.emit()

@@ -18,11 +18,13 @@ def _parse(argv):
     ap.add_argument("--no-native-frame", action="store_true", help="keep the animations but skip the Windows native window frame (snap / resize)")
     ap.add_argument("--classic", action="store_true", help="run without any of the newer window / animation code (diagnostics)")
     ap.add_argument("--exit-after", type=float, default=0, help=argparse.SUPPRESS)       # diagnostics: quit cleanly after N seconds
+    ap.add_argument("--wait-pid", type=int, default=0, help=argparse.SUPPRESS)           # restart: wait for the old process to exit first
+    ap.add_argument("--delay", type=float, default=0, help=argparse.SUPPRESS)            # legacy restart argument (seconds to wait)
     ap.add_argument("--new-instance", action="store_true", help="don't hand over to an already running browser")
     return ap.parse_known_args(argv)[0]
 
 
-def _chromium_flags(settings_path, safe, enhanced=True):
+def _chromium_flags(settings_path, safe, enhanced=True, debug=False):
     """Chromium switches must be set before QApplication exists, so read settings.json directly."""
     data = {}
     try:
@@ -39,6 +41,8 @@ def _chromium_flags(settings_path, safe, enhanced=True):
         flags.append("--disable-extensions")
     if enhanced and not safe and data.get("smooth_scrolling") is not False:
         flags.append("--enable-smooth-scrolling")          # Chromium's eased wheel / keyboard scrolling (off by default in Qt WebEngine)
+    if not debug:
+        flags.append("--log-level=3")                      # only fatal Chromium messages: hides harmless GPU-fallback "ERROR"s (e.g. GLES3 -> GLES2)
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         flags.append("--no-sandbox")                       # Chromium refuses to run as root otherwise
     existing = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
@@ -69,24 +73,43 @@ def _enhancements(args):
             failed = int(f.read().strip() or 0)
     except (OSError, ValueError):
         failed = 0
-    try:                                                   # a marker written by an older revision: that bug is fixed, try again
+    marker_rev, remaining = None, 0
+    try:
         with open(off) as f:
-            if f"rev={enhance.REV}" not in f.read():
-                os.remove(off)
-    except OSError:
+            body = f.read()
+        marker_rev = int(body.split("rev=", 1)[1].split()[0]) if "rev=" in body else None
+        remaining = int(body.split("remaining=", 1)[1].split()[0]) if "remaining=" in body else 3
+    except (OSError, ValueError, IndexError):
         pass
-    if failed >= 1 and not os.path.exists(off):
-        # The last start never finished. Don't know why, but the enhancements are the newest code: turn them off,
-        # forget the failures (so we don't drop into safe mode for something they caused) and start normally.
+    if marker_rev is not None and marker_rev != enhance.REV:      # written by an older revision: that bug is fixed, try again
+        try:
+            os.remove(off)
+        except OSError:
+            pass
+        marker_rev = None
+    if failed >= 1 and marker_rev is None:
+        # The last start never finished. Don't know why, but the enhancements are the newest code: turn them off for the next
+        # few starts (not forever), forget the failures (so we don't drop into safe mode for something they caused).
         try:
             with open(off, "w") as f:
-                f.write(f"rev={enhance.REV}\nswitched off automatically after a start that did not finish\n")
+                f.write(f"rev={enhance.REV}\nremaining=3\nswitched off automatically after a start that did not finish\n")
             os.remove(counter)
         except OSError:
             pass
         enhance.AUTO_DISABLED = True
         return False
-    return not os.path.exists(off)
+    if marker_rev is not None:
+        # Count this start down; when it reaches zero the effects get a fresh chance on the start after.
+        try:
+            if remaining <= 1:
+                os.remove(off)
+            else:
+                with open(off, "w") as f:
+                    f.write(f"rev={enhance.REV}\nremaining={remaining - 1}\nswitched off automatically after a start that did not finish\n")
+        except OSError:
+            pass
+        return False
+    return True
 
 
 def main(argv=None):
@@ -96,6 +119,13 @@ def main(argv=None):
     from . import constants as C
     from .core import paths
 
+    if args.wait_pid:
+        from .core import crash as _crash
+        _crash.wait_for_pid(args.wait_pid, 10.0)            # restarted by the previous copy: let it finish cleaning up first
+    elif args.delay > 0:
+        import time
+        time.sleep(min(args.delay, 5.0))
+
     QCoreApplication.setApplicationName(C.APP_NAME)
     QCoreApplication.setOrganizationName(C.ORG_NAME)
     QCoreApplication.setApplicationVersion(C.VERSION)
@@ -104,7 +134,7 @@ def main(argv=None):
     from .ui import enhance
     enhance.ENABLED = _enhancements(args)
     enhance.NATIVE_FRAME = not args.no_native_frame
-    _chromium_flags(os.path.join(paths.data_dir(), "settings.json"), args.safe_mode, enhance.ENABLED)
+    _chromium_flags(os.path.join(paths.data_dir(), "settings.json"), args.safe_mode, enhance.ENABLED, args.debug)
 
     from .web.scheme import register_scheme
     register_scheme()                                       # must precede QApplication

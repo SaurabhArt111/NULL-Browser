@@ -98,6 +98,21 @@ PAGES = {
     </script></body></html>""",
     "/ads.html": """<html><title>ads</title><body><h1>content</h1>
       <img src="http://ads.doubleclick.net/pixel.png"><script src="http://www.googletagservices.com/tag.js"></script></body></html>""",
+    "/cosmetic.html": """<html><title>cosmetic</title><body><div id="keep">content</div><div class="adbox-null-test" id="boxA">AD</div>
+      <script>window.R={}; setTimeout(()=>{ R.boxHidden = getComputedStyle(document.getElementById('boxA')).display==='none';
+        R.keepVisible = getComputedStyle(document.getElementById('keep')).display!=='none'; R.done=true; }, 400);</script></body></html>""",
+    "/netfilter.html": """<html><title>netfilter</title><body><script>
+      window.R={blockedLoaded:false, redirOnload:false, redirOnerror:false, done:false};
+      function add(src, on, err){ var s=document.createElement('script'); s.src=src; s.onload=on; s.onerror=err; document.body.appendChild(s); }
+      var other = location.href.replace('127.0.0.1','localhost').replace(/\\/netfilter.html.*/,'');
+      add(other+'/null-ad-tracker.js', function(){R.blockedLoaded=window.NULL_AD_LOADED===1;}, function(){});
+      add(other+'/null-redirect-me.js', function(){R.redirOnload=true; R.redirReal=window.NULL_REAL===1;}, function(){R.redirOnerror=true;});
+      fetch(other+'/null-pixel.gif?utm_source=abc&keepme=1', {mode:'no-cors'}).catch(function(){});
+      setTimeout(function(){R.done=true;}, 1500);
+    </script></body></html>""",
+    "/null-ad-tracker.js": "window.NULL_AD_LOADED=1;",
+    "/null-redirect-me.js": "window.NULL_REAL=1;",
+    "/null-pixel.gif": "GIF89a",
     "/popup.html": """<html><title>popup</title><body><script>window.open('/perm.html','_blank');</script>hello</body></html>""",
     "/zoom.html": "<html><title>zoom</title><body>zoom test</body></html>",
     "/private.html": "<html><title>privatepage</title><body>only in a private window</body></html>",
@@ -109,13 +124,17 @@ PAGES = {
 }
 
 
+HITS = []                                     # every path the test web server was asked for
+
+
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        HITS.append(self.path)
         body = PAGES.get(self.path.split("?")[0])
         if body is None:
             self.send_response(404); self.end_headers(); return
         self.send_response(200)
-        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Type", "application/javascript" if self.path.split("?")[0].endswith(".js") else "text/html")
         self.end_headers()
         self.wfile.write(body.encode())
 
@@ -156,6 +175,13 @@ def _run(app, outdir):
     w.resize(1280, 820)
     t = w.current()
     ok("window + first tab created", w and t)
+    app.settings.data["adblock_auto_update"] = False          # the test must never touch the network
+    fm = app.adblock.filters
+    ready = wait_until(lambda: fm.engine is not None and not fm.building, 60000)
+    print("INFO ad-block engine:", fm.message, flush=True)
+    ok("filter engine is ready", ready and fm.rules > 1000, f"{fm.message} rules={fm.rules}")
+    ok("engine blocks a known ad host from the real lists", fm.engine.check("https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js", "https://example.com/", "script")[0])
+    ok("engine allows a normal first-party script", not fm.engine.check("https://example.com/app.js", "https://example.com/", "script")[0])
 
     # ---- internal pages render ------------------------------------------------------------------
     errors_before = len(t.page.console)
@@ -252,6 +278,36 @@ def _run(app, outdir):
     load(t, base + "/ads.html")
     QTest.qWait(800)
     ok("ad/tracker requests blocked", app.adblock.total - before >= 1, f"blocked {app.adblock.total - before}")
+    # ---- the filter engine inside the real browser: filter syntax, redirect stubs, removeparam, cosmetic hiding ----------
+    def settle(gen, extra=700):
+        wait_until(lambda: fm.generation > gen and not fm.building, 30000)
+        QTest.qWait(extra)
+        wait_until(lambda: not fm.building, 30000)
+    gen = fm.generation
+    for rule in ("||localhost^*/null-ad-tracker.js$script", "||localhost^*/null-redirect-me.js$script,redirect=noopjs",
+                 "||localhost^$removeparam=utm_source", "127.0.0.1##.adbox-null-test"):
+        app.adblock.custom_lines.append(app.adblock.parse_rule(rule) or rule)
+    app.adblock.save_custom()
+    fm.rebuild()
+    settle(gen)
+    HITS.clear()
+    load(t, base + "/netfilter.html")
+    wait_until(lambda: js(t, "!!window.R && R.done"), 8000)
+    r = json.loads(js(t, "JSON.stringify(R)") or "{}")
+    ok("filter rule ($script) stops the ad script loading", r.get("blockedLoaded") is False and not any("null-ad-tracker" in h for h in HITS), f"{r} {HITS}")
+    redirect_ok = (r.get("redirOnload") and not r.get("redirReal")) or not fm.backend.name == "rust"
+    ok("$redirect=noopjs swaps in a harmless stub (page script still loads, real one does not run)", redirect_ok and not r.get("redirReal"), f"{r} {HITS}")
+    if fm.backend.name == "python" or fm.backend.name == "rust":
+        pix = [h for h in HITS if "null-pixel" in h]
+        ok("$removeparam strips the tracking parameter but keeps the others", bool(pix) and all("utm_source" not in h and "keepme=1" in h for h in pix), str(pix))
+    else:
+        print("SKIP $removeparam: the PyPI engine does not support it", flush=True)
+    load(t, base + "/cosmetic.html")
+    wait_until(lambda: js(t, "!!window.R && R.done"), 8000)
+    r = json.loads(js(t, "JSON.stringify(R)") or "{}")
+    ok("cosmetic filter hides the ad box and leaves page content alone", r.get("boxHidden") is True and r.get("keepVisible") is True, str(r))
+    for rule in list(app.adblock.custom_lines):
+        app.adblock.remove_rule(rule)
     n_before = len(w.tabs)
     load(t, base + "/popup.html")
     QTest.qWait(800)
