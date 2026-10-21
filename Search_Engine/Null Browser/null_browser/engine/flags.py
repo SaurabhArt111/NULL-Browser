@@ -5,6 +5,7 @@ reason; nothing is added "just in case".
 """
 import json
 import os
+import sys
 
 
 def build(settings_path, safe=False, enhanced=True, debug=False):
@@ -27,6 +28,10 @@ def build(settings_path, safe=False, enhanced=True, debug=False):
         flags.append("--disable-extensions")
     if enhanced and not safe and data.get("smooth_scrolling") is not False:
         flags.append("--enable-smooth-scrolling")           # Chromium's eased wheel / keyboard scrolling (off by default in Qt WebEngine)
+    if sys.platform == "win32" and not safe:
+        # Chromium on Windows works out which windows are hidden behind others and stops / restarts painting them; with a frameless
+        # window that shows up as flashes of the page background while switching tabs, resizing or snapping.
+        flags.append("--disable-features=CalculateNativeWinOcclusion")
     if not debug:
         flags.append("--log-level=3")                       # only fatal Chromium messages (hides harmless GPU-fallback "ERROR"s)
     if hasattr(os, "geteuid") and os.geteuid() == 0:

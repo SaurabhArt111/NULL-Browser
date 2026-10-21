@@ -311,7 +311,7 @@
   /* ------------------------------------------------------------------ plain <video src="...mp4"> */
   /* A whole file cannot be fed to a SourceBuffer, so the browser downloads it, converts it with ffmpeg and streams the WebM
      back; the element plays a MediaSource that fills while it converts. */
-  var nSrc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "src"), conv = new WeakMap();
+  var nSrc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "src"), conv = new WeakMap(), failed = new Set(), watched = new WeakSet();
   function mp4ish(url) {
     try { var u = new URL(String(url), document.baseURI); return /^https?:$/.test(u.protocol) && /\.(mp4|m4v|mov)(?![a-z0-9])/i.test(u.pathname); }
     catch (e) { return false; }
@@ -324,6 +324,7 @@
   function convertFile(el, url) {
     stopFile(el);
     var abs = new URL(String(url), document.baseURI).href;
+    if (failed.has(abs)) { nSrc.set.call(el, abs); return; }   // already tried and failed: never loop, let the page see the native error
     var st = { url: abs, id: nextId++, q: { video: [], audio: [] }, sb: {}, ended: false, ms: new MediaSource(), info: null, got: false, finished: 0 };
     conv.set(el, st);
     track(el);
@@ -355,6 +356,7 @@
           else if (kind === "end") { st.ended = true; pump("video"); pump("audio"); }
           else {                                              // error: hand the element back to the page as it was
             console.warn("[null-video] could not convert", st.url, payload);
+            failed.add(st.url);
             stopFile(el);
             if (!st.got) nSrc.set.call(el, st.url); else try { st.ms.endOfStream("decode"); } catch (e) {}
           }
@@ -363,9 +365,17 @@
       });
     }, { once: true });
   }
+  function watch(el) {                                       // let the engine try first; convert only if it cannot play the file
+    if (watched.has(el)) return;
+    watched.add(el);
+    el.addEventListener("error", function () {
+      var url = nSrc.get.call(el);
+      if (!conv.has(el) && el.error && el.error.code === 4 && url && mp4ish(url) && !failed.has(new URL(url, document.baseURI).href)) convertFile(el, url);
+    });
+  }
   Object.defineProperty(HTMLMediaElement.prototype, "src", { configurable: true, enumerable: true,
     get: function () { var st = conv.get(this); return st ? st.url : nSrc.get.call(this); },
-    set: function (v) { if (mp4ish(v)) convertFile(this, v); else { stopFile(this); nSrc.set.call(this, v); } } });
+    set: function (v) { stopFile(this); nSrc.set.call(this, v); if (mp4ish(v)) watch(this); } });
   var nSetAttr = Element.prototype.setAttribute;
   HTMLMediaElement.prototype.setAttribute = function setAttribute(name, value) {
     if (String(name).toLowerCase() === "src") { this.src = value; return; }
@@ -375,6 +385,6 @@
     var t = e.target, el = t instanceof HTMLMediaElement ? t : (t instanceof HTMLSourceElement ? t.parentElement : null);
     if (!(el instanceof HTMLMediaElement) || conv.has(el)) return;
     var url = t instanceof HTMLSourceElement ? t.src : (el.currentSrc || nSrc.get.call(el));
-    if ((t !== el || (el.error && el.error.code === 4)) && mp4ish(url)) convertFile(el, url);
+    if ((t !== el || (el.error && el.error.code === 4)) && mp4ish(url) && !failed.has(new URL(url, document.baseURI).href)) convertFile(el, url);
   }, true);
 })();
