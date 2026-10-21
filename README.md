@@ -25,8 +25,13 @@ Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--d
 
 ## What's new in this update
 
+**Performance / flicker update.** The code was reorganised (`privacy/`, `engine/`, and `ui/`, `app` split into focused modules; see `Search_Engine/Null Browser/README.md`),
+the colour veil on tab switches and the load bar's page resize were removed, the ad blocker's scriptlets are cleaned up before any engine builds (fewer, safer, scoped; configurable in
+Settings -> "Keep video sites safe from scriptlets"), media CDNs skip the filter engine, and generic element hiding and the cookie filter, both silently broken before, now work.
+Videos on X / Reddit / Instagram / Facebook are H.264, which the PyPI Qt WebEngine cannot decode: the new **video bridge** converts them on the fly with ffmpeg (`imageio-ffmpeg` is in requirements.txt; Settings -> Play H.264 video). See `Search_Engine/Null Browser/docs/VIDEO_CODECS.md`.
+
 **Privacy: a real ad / tracker blocker.** The old domain list is replaced by Brave's **adblock-rust** engine (vendored in `native/adblock-rust`, MPL-2.0),
-driven through `null_browser/core/adblockengine.py`. It understands the full Adblock Plus / uBlock Origin syntax: `$third-party`, `$domain=`, `$important`,
+driven through `null_browser/privacy/filters.py`. It understands the full Adblock Plus / uBlock Origin syntax: `$third-party`, `$domain=`, `$important`,
 `$badfilter`, `$redirect` (harmless stand-in scripts/pixels, served from `null://stub/`), `$removeparam` (tracking parameters are stripped, also on page
 navigations), cosmetic rules (`##.ad-box`, `#@#` exceptions, generic and per-site) and uBlock scriptlets.
 

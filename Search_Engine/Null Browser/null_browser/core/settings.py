@@ -35,9 +35,12 @@ DEFAULTS = {
     "adblock": True,
     "block_trackers": True,
     "send_dnt": True,
-    "adblock_lists": {},               # filter list id -> bool (absent = default for the engine in use), see core/adblockengine.py
+    "adblock_lists": {},               # filter list id -> bool (absent = default for the engine in use), see privacy/filters.py
     "adblock_auto_update": True,       # refresh the updatable filter lists about once a week
     "adblock_last_update": 0,
+    "video_transcode": True,           # play H.264 / AAC video by converting it with ffmpeg when the engine cannot decode it (video/)
+    "video_ffmpeg_path": "",           # optional: a specific ffmpeg executable
+    "adblock_video_safe": True,        # on video / social sites run only the lightweight scriptlets (see privacy/sanitize.py)
     "adblock_cosmetic": True,          # hide leftover ad containers and run scriptlets (Brave / uBlock style)
     "webrtc_ip_protect": True,         # WebRTC only uses the public network interface (does not expose your LAN address)
     "https_first": True,
@@ -65,6 +68,7 @@ DEFAULTS = {
     "permission_defaults": {},
     "profile_name": "You",
     "newtab": {},                      # New Tab page customisation (background, shortcuts, layout) - see web/static/newtab.js
+    "codec_notice_dismissed": False,   # the "this engine cannot play H.264 video" bar (engine/codecs.py)
     "last_version": "",
 }
 

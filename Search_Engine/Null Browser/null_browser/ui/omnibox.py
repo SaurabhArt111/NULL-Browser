@@ -2,8 +2,7 @@
 import logging
 import re
 
-from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QToolButton, QWidget
 
 from ..core.search import SuggestClient

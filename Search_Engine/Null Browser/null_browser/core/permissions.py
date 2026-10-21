@@ -297,12 +297,12 @@ SHIM_JS = r"""
   }
   const blockedEvents = {};
   if (P.motion_sensors === 'block') { blockedEvents.devicemotion = 1; blockedEvents.deviceorientation = 1; blockedEvents.deviceorientationabsolute = 1; }
-  if (P.web_app_install !== 'allow') blockedEvents.beforeinstallprompt = 1;
+  if (P.web_app_install === 'block') blockedEvents.beforeinstallprompt = 1;   // only on an explicit Block: patching addEventListener on every page is not free
   if (Object.keys(blockedEvents).length) {
     const add = EventTarget.prototype.addEventListener;
     EventTarget.prototype.addEventListener = function (t) { if (blockedEvents[t]) return; return add.apply(this, arguments); };
   }
-  if (P.web_app_install !== 'allow') { try { Object.defineProperty(window, 'onbeforeinstallprompt', { set() {}, get() { return null; }, configurable: true }); } catch (e) {} }
+  if (P.web_app_install === 'block') { try { Object.defineProperty(window, 'onbeforeinstallprompt', { set() {}, get() { return null; }, configurable: true }); } catch (e) {} }
   if (P.background_sync === 'block') {
     ['SyncManager', 'PeriodicSyncManager'].forEach(function (k) { del(window, k); });
     try { if (window.ServiceWorkerRegistration) { del(ServiceWorkerRegistration.prototype, 'sync'); del(ServiceWorkerRegistration.prototype, 'periodicSync'); } } catch (e) {}
@@ -311,9 +311,9 @@ SHIM_JS = r"""
   if (P.protected_content === 'block' && nav.requestMediaKeySystemAccess)
     nav.requestMediaKeySystemAccess = function () { return Promise.reject(denied('protected_content')); };
   if (P.third_party_signin === 'block') { ['IdentityCredential', 'IdentityProvider', 'FederatedCredential'].forEach(function (k) { del(window, k); }); }
-  if (P.auto_pip !== 'allow' && nav.mediaSession && nav.mediaSession.setActionHandler) {
+  if (P.auto_pip === 'block' && nav.mediaSession && nav.mediaSession.setActionHandler) {   // media players register handlers here: leave it alone unless blocked
     const sah = nav.mediaSession.setActionHandler.bind(nav.mediaSession);
-    nav.mediaSession.setActionHandler = function (a, h) { if (a === 'enterpictureinpicture' && (P.auto_pip === 'block' || !askSync('auto_pip'))) return; return sah(a, h); };
+    nav.mediaSession.setActionHandler = function (a, h) { if (a === 'enterpictureinpicture') return; return sah(a, h); };
   }
 })();
 """

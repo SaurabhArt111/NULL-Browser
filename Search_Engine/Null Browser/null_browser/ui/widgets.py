@@ -1,7 +1,9 @@
-"""Small animated widgets: toolbar buttons that fade their hover background, and a veil that fades between pages."""
+"""Small animated widgets: toolbar buttons that fade their hover background.
+
+(A colour veil that faded over the page on every tab switch used to live here. It made every tab change flash, so it was removed.)"""
 from PyQt6.QtCore import QEasingCurve, QRectF, Qt, QVariantAnimation
 from PyQt6.QtGui import QColor, QPainter
-from PyQt6.QtWidgets import QToolButton, QWidget
+from PyQt6.QtWidgets import QToolButton
 
 
 class HoverToolButton(QToolButton):
@@ -66,45 +68,3 @@ class HoverToolButton(QToolButton):
             p.drawRoundedRect(r, rad, rad)
             p.end()
         super().paintEvent(ev)
-
-
-class FadeVeil(QWidget):
-    """A flat colour that sits over the page area and fades away: smooths tab switches and hides the blank frame
-    Chromium shows before it has painted a new page."""
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        self._color = QColor("#000000")
-        self._alpha = 0.0
-        self._anim = QVariantAnimation(self, duration=170, easingCurve=QEasingCurve.Type.OutCubic)
-        self._anim.valueChanged.connect(self._tick)
-        self._anim.finished.connect(self.hide)
-        self.hide()
-
-    def _tick(self, v):
-        self._alpha = float(v)
-        self.update()
-
-    def flash(self, color, start=0.85):
-        if not self.parentWidget() or not self.parentWidget().isVisible():
-            return
-        self._color = QColor(color)
-        self.setGeometry(self.parentWidget().rect())
-        self._anim.stop()
-        self._anim.setStartValue(start)
-        self._anim.setEndValue(0.0)
-        self._alpha = start
-        self.show()
-        self.raise_()
-        self._anim.start()
-
-    def paintEvent(self, ev):
-        if self._alpha <= 0.001:
-            return
-        c = QColor(self._color)
-        c.setAlphaF(self._alpha)
-        p = QPainter(self)
-        p.fillRect(self.rect(), c)
-        p.end()

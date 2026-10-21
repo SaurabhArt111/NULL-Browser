@@ -1,6 +1,5 @@
 """Entry point: flags -> QApplication -> BrowserApp, with start-up crash-loop protection."""
 import argparse
-import json
 import os
 import sys
 import traceback
@@ -22,34 +21,6 @@ def _parse(argv):
     ap.add_argument("--delay", type=float, default=0, help=argparse.SUPPRESS)            # legacy restart argument (seconds to wait)
     ap.add_argument("--new-instance", action="store_true", help="don't hand over to an already running browser")
     return ap.parse_known_args(argv)[0]
-
-
-def _chromium_flags(settings_path, safe, enhanced=True, debug=False):
-    """Chromium switches must be set before QApplication exists, so read settings.json directly."""
-    data = {}
-    try:
-        with open(settings_path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        pass
-    flags = []
-    if safe or data.get("hardware_acceleration") is False:
-        flags.append("--disable-gpu")
-    if (data.get("permission_defaults") or {}).get("js_optimization") == "block" and not safe:
-        flags.append("--js-flags=--jitless")
-    if safe:
-        flags.append("--disable-extensions")
-    if enhanced and not safe and data.get("smooth_scrolling") is not False:
-        flags.append("--enable-smooth-scrolling")          # Chromium's eased wheel / keyboard scrolling (off by default in Qt WebEngine)
-    if not debug:
-        flags.append("--log-level=3")                      # only fatal Chromium messages: hides harmless GPU-fallback "ERROR"s (e.g. GLES3 -> GLES2)
-    if hasattr(os, "geteuid") and os.geteuid() == 0:
-        flags.append("--no-sandbox")                       # Chromium refuses to run as root otherwise
-    existing = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (existing + " " + " ".join(flags)).strip()
-    port = int(data.get("remote_debugging_port") or 0)
-    if port and "QTWEBENGINE_REMOTE_DEBUGGING" not in os.environ:
-        os.environ["QTWEBENGINE_REMOTE_DEBUGGING"] = str(port)
 
 
 def _enhancements(args):
@@ -92,7 +63,7 @@ def _enhancements(args):
         # few starts (not forever), forget the failures (so we don't drop into safe mode for something they caused).
         try:
             with open(off, "w") as f:
-                f.write(f"rev={enhance.REV}\nremaining=3\nswitched off automatically after a start that did not finish\n")
+                f.write(f"rev={enhance.REV}\nremaining=1\nswitched off automatically after a start that did not finish\n")
             os.remove(counter)
         except OSError:
             pass
@@ -108,6 +79,7 @@ def _enhancements(args):
                     f.write(f"rev={enhance.REV}\nremaining={remaining - 1}\nswitched off automatically after a start that did not finish\n")
         except OSError:
             pass
+        enhance.AUTO_DISABLED = True
         return False
     return True
 
@@ -134,8 +106,10 @@ def main(argv=None):
     from .ui import enhance
     enhance.ENABLED = _enhancements(args)
     enhance.NATIVE_FRAME = not args.no_native_frame
-    _chromium_flags(os.path.join(paths.data_dir(), "settings.json"), args.safe_mode, enhance.ENABLED, args.debug)
+    from .engine import flags as chromium_flags
+    chromium_flags.apply(os.path.join(paths.data_dir(), "settings.json"), args.safe_mode, enhance.ENABLED, args.debug)
 
+    sys.setswitchinterval(0.001)                            # the ad-block interceptor runs Python on Chromium's IO thread: hand the GIL over quickly
     from .web.scheme import register_scheme
     register_scheme()                                       # must precede QApplication
 
@@ -182,8 +156,8 @@ def main(argv=None):
         app.start(urls, private=args.private)
         log.info("Windows opened: %d", len(app.windows))
         if enhance.AUTO_DISABLED and app.windows:
-            app.windows[0].add_infobar("The last start didn't finish, so the new window effects (native snap / resize, animations) were switched off. "
-                                       "Start with --enhanced to try them again.", [("Dismiss", lambda: None)])
+            app.windows[0].add_infobar("The last start didn't finish, so native snap / resize and the window animations are off for this start only.",
+                                       [("Turn on now", lambda: crash.restart_app(["--enhanced"])), ("Dismiss", lambda: None)])
     except Exception:
         text = traceback.format_exc()
         log.critical("Fatal start-up error:\n%s", text)

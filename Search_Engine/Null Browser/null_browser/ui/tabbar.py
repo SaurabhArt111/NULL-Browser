@@ -1,9 +1,9 @@
 """Chrome-style tab strip: adaptive widths, pinned tabs, audio buttons, loading spinner, drag reorder."""
 import logging
 
-from PyQt6.QtCore import QEasingCurve, QEvent, QPoint, QPointF, QSize, Qt, QTimer, QVariantAnimation, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QEvent, QPointF, QSize, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt6.QtGui import QAction, QCursor, QMouseEvent
-from PyQt6.QtWidgets import QApplication, QFrame, QHBoxLayout, QMenu, QTabBar, QToolButton, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QMenu, QTabBar, QToolButton, QWidget
 
 from . import icons
 from . import enhance

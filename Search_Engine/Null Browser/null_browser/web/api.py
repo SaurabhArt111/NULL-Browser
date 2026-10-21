@@ -95,7 +95,7 @@ def settings_get(app, p, private):
     label = next(o["label"] for o in permissions.BY_ID["cookies"]["options"] if o["value"] == cookies)
     return {
         "settings": app.settings.all(), "restart_keys": sorted(RESTART_KEYS), "catalog": app.perms.catalog_with_state(),
-        "engines": app.search.engines(), "engine": app.engine.info(), "perm_defaults": {"cookies_label": label},
+        "video": app.video.info(), "engines": app.search.engines(), "engine": app.engine.info(), "perm_defaults": {"cookies_label": label},
         "meta": {"data_dir": paths.data_dir(), "default_download_dir": paths.downloads_dir(), "versions": app.versions(),
                  "bookmark_count": len(app.db.bookmarks())},
     }
@@ -361,7 +361,8 @@ def adblock_info(app, p, private):
             "redirected_total": a.redirected, "backend": a.backend_label, "building": fm.building, "message": fm.message,
             "updating": fm.updating, "update_error": fm.update_error, "last_update": fm.last_update(),
             "lists": fm.lists_info(), "auto_update": bool(app.settings.get("adblock_auto_update")),
-            "cosmetic": bool(app.settings.get("adblock_cosmetic"))}
+            "cosmetic": bool(app.settings.get("adblock_cosmetic")),
+            "video_safe": bool(app.settings.get("adblock_video_safe")), "policy": dict(getattr(fm, "policy_report", {}) or {})}
 
 
 @route("adblock/set_list")

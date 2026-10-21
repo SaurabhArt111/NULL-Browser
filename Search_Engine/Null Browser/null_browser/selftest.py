@@ -7,7 +7,7 @@ import threading
 import time
 import traceback
 
-from PyQt6.QtCore import QEventLoop, QTimer
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QToolButton
@@ -114,6 +114,23 @@ PAGES = {
     "/null-redirect-me.js": "window.NULL_REAL=1;",
     "/null-pixel.gif": "GIF89a",
     "/popup.html": """<html><title>popup</title><body><script>window.open('/perm.html','_blank');</script>hello</body></html>""",
+    "/h264mse.html": """<html><body style="margin:0"><video id=v muted autoplay playsinline width=320 height=180></video><script>
+      window.R={}; (async()=>{ try{
+        R.supported = MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"') && MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"');
+        const ms=new MediaSource(), v=document.getElementById('v'); v.src=URL.createObjectURL(ms);
+        await new Promise(r=>ms.addEventListener('sourceopen',r,{once:true}));
+        const get=async u=>new Uint8Array(await (await fetch(u)).arrayBuffer());
+        const sbv=ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"'), sba=ms.addSourceBuffer('audio/mp4; codecs="mp4a.40.2"');
+        const app=(sb,d)=>new Promise((res,rej)=>{ sb.addEventListener('updateend',()=>res(),{once:true}); sb.addEventListener('error',()=>rej(new Error('sb error')),{once:true}); sb.appendBuffer(d); });
+        async function feed(sb,pre,init,n){ await app(sb,await get(init)); for(let i=0;i<n;i++) await app(sb,await get(pre+i+'.m4s')); }
+        v.play().catch(()=>{});
+        await Promise.all([feed(sbv,'/m/v','/m/init_v.bin',R_N),feed(sba,'/m/a','/m/init_a.bin',R_N)]);
+        try{ms.endOfStream();}catch(e){}
+        await new Promise(r=>setTimeout(r,2500));
+        R.t=v.currentTime; R.w=v.videoWidth; R.err=v.error?v.error.code:0;
+      }catch(e){ R.exc=String(e); } R.done=true; })();</script></body></html>""",
+    "/h264file.html": """<html><body style="margin:0"><video id=v muted autoplay loop playsinline width=320 height=180 src="/m/prog.mp4"></video><script>
+      window.R={}; setTimeout(()=>{ const v=document.getElementById('v'); R.t=v.currentTime; R.w=v.videoWidth; R.err=v.error?v.error.code:0; R.done=true; }, 5500);</script></body></html>""",
     "/zoom.html": "<html><title>zoom</title><body>zoom test</body></html>",
     "/private.html": "<html><title>privatepage</title><body>only in a private window</body></html>",
     "/apis.html": """<html><title>apis</title><body><script>
@@ -125,11 +142,16 @@ PAGES = {
 
 
 HITS = []                                     # every path the test web server was asked for
+MEDIA = {}                                    # path -> bytes (generated H.264 test clips)
 
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         HITS.append(self.path)
+        raw = MEDIA.get(self.path.split("?")[0])
+        if raw is not None:
+            self.send_response(200); self.send_header("Content-Type", "application/octet-stream"); self.send_header("Content-Length", str(len(raw)))
+            self.end_headers(); self.wfile.write(raw); return
         body = PAGES.get(self.path.split("?")[0])
         if body is None:
             self.send_response(404); self.end_headers(); return
@@ -140,6 +162,45 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+
+def _make_h264_clips(exe, tmp):
+    """Three-second H.264 + AAC test clips: one progressive file and a fragmented set (init + pieces) for MediaSource. None if ffmpeg cannot encode H.264."""
+    import struct
+    import subprocess
+    try:
+        enc = subprocess.run([exe, "-hide_banner", "-encoders"], capture_output=True, timeout=15).stdout.decode("utf-8", "replace")
+        if "libx264" not in enc or " aac " not in enc.replace("\n", " "):
+            return None
+        base = [exe, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=3",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=3", "-c:v", "libx264", "-preset", "veryfast", "-g", "25",
+                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k"]
+        subprocess.run(base + ["-movflags", "+faststart", os.path.join(tmp, "prog.mp4")], check=True, timeout=60)
+        subprocess.run(base + ["-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-frag_duration", "1000000", "-f", "mp4", os.path.join(tmp, "frag.mp4")],
+                       check=True, timeout=60)
+        for kind, flag, pre in (("video", "-an", "v"), ("audio", "-vn", "a")):
+            out = os.path.join(tmp, kind + ".mp4")
+            subprocess.run([exe, "-hide_banner", "-loglevel", "error", "-y", "-i", os.path.join(tmp, "frag.mp4"), flag, "-c", "copy", "-movflags",
+                            "+frag_keyframe+empty_moov+default_base_moof", "-frag_duration", "1000000", "-f", "mp4", out], check=True, timeout=60)
+            data = open(out, "rb").read()
+            i, init, cur, n = 0, b"", b"", 0
+            while i + 8 <= len(data):
+                size, typ = struct.unpack(">I4s", data[i:i + 8])
+                seg = data[i:i + size]
+                i += size
+                if typ in (b"ftyp", b"moov"):
+                    init += seg
+                elif typ == b"moof":
+                    cur = seg
+                elif typ == b"mdat":
+                    MEDIA[f"/m/{pre}{n}.m4s"] = cur + seg
+                    n += 1
+            MEDIA[f"/m/init_{pre}.bin"] = init
+        MEDIA["/m/prog.mp4"] = open(os.path.join(tmp, "prog.mp4"), "rb").read()
+        return sum(1 for k in MEDIA if k.startswith("/m/v") and k.endswith(".m4s"))
+    except Exception as e:
+        print("INFO could not make test clips:", e, flush=True)
+        return None
 
 
 def run(app, outdir):
@@ -371,6 +432,39 @@ def _run(app, outdir):
     ok("unsolicited pop-up blocked", t.blocked_popups >= 1 and len(w.tabs) == n_before, f"tabs {len(w.tabs)} blocked {t.blocked_popups}")
     r = js_async(t, "fetch('null://history/api/history/list',{method:'POST',body:'{}'}).then(r=>r.text()).then(x=>'reached:'+x.slice(0,30)).catch(e=>'blocked')")
     ok("web page cannot call the null:// API", str(r) == "blocked", str(r))
+
+    # ---- H.264 / AAC through the video bridge (needs ffmpeg with an H.264 encoder to make test clips) ---------------------
+    from .video import service as video_service
+    video_service.ALLOW_PRIVATE = True
+    if app.video.enabled:
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="null-vtest-") as tmp:
+            n_pieces = _make_h264_clips(app.video.exe, tmp)
+            if n_pieces:
+                PAGES["/h264mse.html"] = PAGES["/h264mse.html"].replace("R_N", str(n_pieces))
+                load(t, base + "/h264mse.html")
+                wait_until(lambda: js(t, "!!window.R && R.done"), 40000)
+                r = json.loads(js(t, "JSON.stringify(R)") or "{}")
+                if r.get("supported") and "exc" not in r and "avc" not in str(r):
+                    ok("video bridge: an H.264 + AAC MediaSource stream plays", (r.get("t") or 0) > 0.8 and r.get("w") == 320 and not r.get("err"), str(r))
+                else:
+                    ok("video bridge: an H.264 + AAC MediaSource stream plays", False, str(r))
+                load(t, base + "/h264file.html")
+                wait_until(lambda: js(t, "!!window.R && R.done"), 40000)
+                r = json.loads(js(t, "JSON.stringify(R)") or "{}")
+                ok("video bridge: a plain H.264 .mp4 file plays", (r.get("t") or 0) > 0.8 and r.get("w") == 320 and not r.get("err"), str(r))
+                app.settings.set("video_transcode", False)
+                load(t, base + "/h264mse.html")
+                wait_until(lambda: js(t, "!!window.R && R.done"), 15000)
+                r = json.loads(js(t, "JSON.stringify(R)") or "{}")
+                ok("video bridge stays out of pages when the setting is off", r.get("supported") is False and js(t, "typeof qt") in ("undefined", None), str(r))
+                app.settings.set("video_transcode", True)
+            else:
+                print("SKIP video bridge: ffmpeg here cannot encode H.264 test clips", flush=True)
+    else:
+        print("SKIP video bridge: " + (app.video.reason() or "turned off"), flush=True)
+    video_service.ALLOW_PRIVATE = False
+    load(t, base + "/zoom.html")
 
     # ---- bookmarks + history through the real API ------------------------------------------------------------
     load(t, base + "/zoom.html")

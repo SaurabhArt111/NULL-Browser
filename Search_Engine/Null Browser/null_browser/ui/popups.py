@@ -1,11 +1,7 @@
 """Popups anchored to toolbar buttons: site information, downloads, bookmark editor, info bars."""
 import logging
-import os
-import time
-from urllib.parse import urlsplit
 
-from PyQt6.QtCore import QPoint, QSize, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton,
                              QScrollArea, QToolButton, QVBoxLayout, QWidget)
 

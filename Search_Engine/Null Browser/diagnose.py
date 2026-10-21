@@ -4,7 +4,6 @@ Double-click diagnose.bat (or run `python diagnose.py`). Your own profile is nev
 against throw-away profiles; your real profile is only opened for a few seconds and closed cleanly.
 """
 import datetime
-import glob
 import os
 import platform
 import shutil
