@@ -1,13 +1,28 @@
 @echo off
-cd /d "%~dp0"
-
-if not exist ".venv\Scripts\python.exe" (
-    echo Virtual environment not found. Running first-time setup...
-    call "%~dp0setup_and_run.bat"
-    exit /b %errorlevel%
+setlocal EnableExtensions EnableDelayedExpansion
+set "ROOT=%~dp0"
+cd /d "!ROOT!"
+title Null Browser project
+call "!ROOT!Search_Engine\Null Browser\find_python.bat"
+if errorlevel 1 (
+    echo This PC has not been set up yet - running the one-time setup first...
+    call "!ROOT!setup_and_run.bat" --no-run
+    call "!ROOT!Search_Engine\Null Browser\find_python.bat"
 )
-
-echo Starting project...
-start "" "%~dp0Search_Engine\Null Search Engine\run_engine.bat"
-timeout /t 3 /nobreak >nul
-start "" "%~dp0Search_Engine\Null Browser\run_browser.bat"
+if not defined NB_PY (
+    echo.
+    echo Setup did not finish, so nothing was started.
+    pause
+    exit /b 1
+)
+"!NB_PY!" -c "import uvicorn, fastapi" >nul 2>nul
+if errorlevel 1 (
+    echo The search server's packages are not installed - starting the browser only. Run setup_and_run.bat to add them.
+) else (
+    echo Starting Null Search Engine in its own minimized window...
+    start "Null Search Engine" /min /d "!ROOT!Search_Engine\Null Search Engine" "!NB_PY!" -u src\main.py
+    timeout /t 3 /nobreak >nul
+)
+echo Starting Null Browser...
+call "!ROOT!Search_Engine\Null Browser\run_null_browser.bat" %*
+exit /b !errorlevel!

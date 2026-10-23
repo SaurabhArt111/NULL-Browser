@@ -5,7 +5,6 @@ import re
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWebEngineCore import QWebEnginePage
-from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QPlainTextEdit, QVBoxLayout)
 
 from ..core import crash
 
@@ -18,29 +17,10 @@ class PageToolsMixin:
 
     # ---- tools --------------------------------------------------------------------------------------
     def view_source(self):
+        """Ctrl+U: the page's real source (as the server sent it) in a new tab, like Chrome's view-source:."""
         url = self.real_url()
         if url.scheme() in ("http", "https", "file"):
-            source_url = url.toString()
-            try:
-                self.page.toHtml(lambda source: self._show_source(source or "", source_url))
-            except Exception:
-                crash.log.exception("could not read page source")
-
-    @crash.guarded(quiet=True)
-    def _show_source(self, source, source_url):
-        dialog = QDialog(self.window())
-        dialog.setWindowTitle(f"Page source: {QUrl(source_url).host() or source_url}")
-        dialog.resize(1000, 700)
-        layout = QVBoxLayout(dialog)
-        text = QPlainTextEdit(dialog)
-        text.setReadOnly(True)
-        text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        text.setPlainText(source or "(empty document)")
-        layout.addWidget(text)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-        dialog.exec()
+            self.openTab.emit("view-source:" + url.toString(QUrl.ComponentFormattingOption.FullyEncoded), False, None)
 
     def _default_name(self):
         return re.sub(r"[^\w\- .]", "_", self.title())[:80] or "page"

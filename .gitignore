@@ -39,3 +39,7 @@ x/
 native/**/target/
 native/dist/
 **/_native/
+
+# build output (build_exe.bat)
+/dist/
+/build/

@@ -4,9 +4,11 @@
  * state   stopped | starting | running | external | unavailable | error
  * The browser keeps working with any state - search falls back to Google.
 """
+import importlib.util
 import json
 import logging
 import os
+import shutil
 import sys
 
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, QUrl, pyqtSignal
@@ -51,17 +53,38 @@ class EngineService(QObject):
         self.timer.start()
         self._probe(first=True)
 
+    def _command(self):
+        """(program, args, extra environment) that starts the search server."""
+        if paths.is_frozen():
+            # The .exe runs its own copy as the server (`--run-engine`, handled in main.py before Qt loads). The index lives in the
+            # user's data folder, seeded from the bundled one, because the bundle itself should not be written to.
+            data = paths.sub("search")
+            seed = os.path.join(self.engine_dir, "data")
+            if os.path.isdir(seed) and not os.listdir(data):
+                try:
+                    shutil.copytree(seed, data, dirs_exist_ok=True, ignore=shutil.ignore_patterns("*-shm", "*-wal", ".gitkeep"))
+                except OSError:
+                    log.warning("could not seed the search index", exc_info=True)
+            return sys.executable, ["--run-engine"], {"NULL_SEARCH_DATA_DIR": data}
+        executable = sys.executable
+        if importlib.util.find_spec("uvicorn") is None:
+            # this interpreter lacks the server's packages: the project's own environment (setup_and_run.bat of older versions) may have them
+            for rel in (("Scripts", "python.exe"), ("bin", "python")):
+                cand = os.path.join(self.engine_dir, "..", "..", ".venv", *rel)
+                if os.path.isfile(cand):
+                    executable = cand
+                    break
+        return executable, ["-u", "src/main.py"], {}
+
     def _spawn(self):
         self._set("starting", "Starting local search server…")
         self.proc = QProcess(self)
         env = QProcessEnvironment.systemEnvironment()
         env.insert("NULL_SEARCH_PORT", str(self.port))
         env.insert("PYTHONUNBUFFERED", "1")
-        engine_python = os.path.join(self.engine_dir, "..", "..", ".venv", "Scripts", "python.exe")
-        if sys.platform.startswith("win") and os.path.isfile(engine_python):
-            executable = engine_python
-        else:
-            executable = sys.executable
+        executable, args, extra = self._command()
+        for k, v in extra.items():
+            env.insert(k, v)
         self.proc.setProcessEnvironment(env)
         self.proc.setWorkingDirectory(self.engine_dir)
         self.proc.readyReadStandardOutput.connect(lambda: self._read(self.proc.readAllStandardOutput()))
@@ -69,7 +92,7 @@ class EngineService(QObject):
         self.proc.finished.connect(self._exited)
         self._stopping = False
         self.proc.errorOccurred.connect(lambda e: None if self._stopping else log.warning("Engine process error: %s", e))
-        self.proc.start(executable, ["-u", "src/main.py"])
+        self.proc.start(executable, args)
 
     def _read(self, data):
         for line in bytes(data).decode("utf-8", "replace").splitlines():

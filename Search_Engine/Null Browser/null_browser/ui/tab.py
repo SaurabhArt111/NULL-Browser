@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QLabel, QMessageBox, QSplitter, QVBoxLayout, QWidge
 from ..constants import SCHEME
 from ..core import crash
 from ..core.permissions import origin_of
+from .devicemode import DeviceModeMixin, Stage
 from .findbar import FindBar
 from .page import BrowserPage, WebView
 from .permission_bubble import PermissionBubble
@@ -25,7 +26,7 @@ LS = QWebEngineLoadingInfo.LoadStatus
 ED = QWebEngineLoadingInfo.ErrorDomain
 
 
-class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWidget):
+class Tab(ContextMenuMixin, DevToolsMixin, DeviceModeMixin, PermissionsMixin, PageToolsMixin, QWidget):
     """One browser tab. Behaviour is split over the mixins: context menu, DevTools, permissions / auth, page tools."""
     titleChanged = pyqtSignal(object)
     urlChanged = pyqtSignal(object)
@@ -66,9 +67,17 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
         self.page = BrowserPage(profile, self)
         self.view = WebView(self)
         self.view.setPage(self.page)
+        self.devbar = None                  # device-mode strip (ui/devicemode.py), created on first use
+        self.stage = Stage(self.view)       # holds the web view; in device mode it is a box of the chosen size
+        self.page_col = QWidget(self)
+        self.page_col_layout = QVBoxLayout(self.page_col)
+        self.page_col_layout.setContentsMargins(0, 0, 0, 0)
+        self.page_col_layout.setSpacing(0)
+        self.page_col_layout.addWidget(self.stage, 1)
         self.split = QSplitter(Qt.Orientation.Horizontal, self)
         self.split.setChildrenCollapsible(False)
-        self.split.addWidget(self.view)
+        self.split.setHandleWidth(4)
+        self.split.addWidget(self.page_col)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.split)
@@ -203,6 +212,7 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
 
     def activate(self):
         self.last_active = time.time()
+        self.schedule_viewport_sync(400)
         if self.lazy_url:                              # restored tab becomes visible: load it now
             url, self.lazy_url = self.lazy_url, ""
             self.load(url)
@@ -227,6 +237,8 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
     def before_navigation(self, url):
         """Runs before every main-frame navigation: per-site settings and the JS API gate."""
         self.current_origin = origin_of(url.toString())
+        if getattr(self, "_device_ua", ""):
+            self.sync_device_ua(url.host())
         self.app.apply_site_policy(self, url)
         self.refresh_background(url)
         self.view.pan_cursor.disarm()
@@ -393,6 +405,7 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
 
     def cleanup(self):
         self.close_devtools()
+        self.end_device_mode()
         cosmetic = getattr(self.app.adblock, "cosmetic", None)
         if cosmetic is not None:
             cosmetic.forget(self.page)
@@ -406,6 +419,39 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
         self._place_overlays()
+        self.schedule_viewport_sync()
+
+    # ---- viewport watchdog ---------------------------------------------------------------------------------------
+    def schedule_viewport_sync(self, delay=250):
+        """Check (once things settle) that Chromium's idea of the page size matches the widget's; see `sync_viewport`."""
+        t = getattr(self, "_vp_timer", None)
+        if t is None:
+            t = self._vp_timer = QTimer(self)
+            t.setSingleShot(True)
+            t.timeout.connect(self.sync_viewport)
+        t.start(delay)
+
+    def sync_viewport(self, tries=3):
+        """After a maximise / snap / DevTools change Chromium's surface can stay at the old size, so the page only fills part
+        of the window. Compare what the page reports (innerWidth x innerHeight) with the widget, and nudge it if they differ."""
+        if self.discarded or self.lazy_url or not self.view.isVisible():
+            return
+        wanted_w, wanted_h = self.view.width(), self.view.height()
+        zoom = self.page.zoomFactor() or 1.0
+
+        def got(result):
+            try:
+                w, h = result
+                bad = abs(w * zoom - wanted_w) > 3 or abs(h * zoom - wanted_h) > 3
+            except (TypeError, ValueError):
+                return                                     # page not scriptable (PDF viewer, crashed, loading)
+            if not bad or self.discarded:
+                return
+            log.info("viewport out of sync (page %sx%s, view %sx%s): resizing", round(w * zoom), round(h * zoom), wanted_w, wanted_h)
+            self.stage.nudge()
+            if tries > 1:
+                QTimer.singleShot(300, lambda: self.sync_viewport(tries - 1))
+        self.page.runJavaScript("[window.innerWidth, window.innerHeight]", got)
 
     def _place_overlays(self):
         self.find.move(max(0, self.width() - self.find.width() - 18), 8)

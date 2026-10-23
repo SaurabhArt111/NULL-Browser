@@ -40,6 +40,8 @@ def blocked_events():
 
 def main():
     import platform
+    if "--quiet" in sys.argv:                       # used by find_python.bat on every start: say nothing when Qt loads
+        return 0 if check() is None else 1
     print(f"Python {platform.python_version()} on {platform.platform()}")
     try:
         import importlib.metadata as md

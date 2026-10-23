@@ -78,6 +78,7 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
         self.enabled = True
         self.block_trackers = True
         self.send_dnt = True
+        self.device_ua = {}                                # host -> User-Agent bytes, for tabs in device mode (ui/devicemode.py)
         self._cache = {}
         self._stubs = {}                                   # id -> (mime, bytes): harmless replacements served at null://stub/<id>
         self.filters = FilterManager(settings, self)
@@ -220,6 +221,10 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
             if self.send_dnt:
                 info.setHttpHeader(b"DNT", b"1")
                 info.setHttpHeader(b"Sec-GPC", b"1")
+            if self.device_ua:
+                ua = self.device_ua.get(info.firstPartyUrl().host().lower() or url.host().lower())
+                if ua:
+                    info.setHttpHeader(b"User-Agent", ua)
             if not self.enabled:
                 return
             rtype = info.resourceType()

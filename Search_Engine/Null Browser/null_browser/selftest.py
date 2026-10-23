@@ -76,6 +76,36 @@ def js_async(tab, expr, timeout=6000):
         return "__timeout__"
 
 
+def press(win, sequence):
+    """Trigger the window action that owns a keyboard shortcut (checks it is registered and wired), as the key press would."""
+    from PyQt6.QtGui import QKeySequence
+    want = QKeySequence(sequence)
+    for a in win.actions():
+        if want in a.shortcuts():
+            a.trigger()
+            return True
+    return False
+
+
+_FIND_JS = ("(()=>{const w=r=>{for(const e of r.querySelectorAll('*')){if(PICK)return e;"
+            "if(e.shadowRoot){const x=w(e.shadowRoot);if(x)return x}}return null};const el=w(document);BODY})()")
+
+
+def devtools_js(tab, pick, body, timeout=4000):
+    """Evaluate something about the DevTools frontend (its buttons and tabs sit in shadow DOM)."""
+    box = {}
+    code = _FIND_JS.replace("PICK", pick).replace("BODY", body)
+    tab.devtools.page().runJavaScript(code, lambda r: box.setdefault("r", r if r is not None else "__none__"))
+    wait_until(lambda: "r" in box, timeout)
+    r = box.get("r", "__timeout__")
+    return None if r == "__none__" else r
+
+
+TAB_SELECTED = "e.id==='tab-console'"
+INSPECT_BTN = "e.tagName==='BUTTON'&&(e.title||'').startsWith('Select an element')"
+CLOSE_BTN = "e.tagName==='BUTTON'&&e.title==='Close'"
+
+
 def load(tab, url, timeout=15000):
     done = {}
     tab.view.loadFinished.connect(lambda ok_: done.setdefault("ok", ok_))
@@ -148,6 +178,10 @@ MEDIA = {}                                    # path -> bytes (generated H.264 t
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         HITS.append(self.path)
+        if self.path.split("?")[0] == "/uaecho":
+            ua = (self.headers.get("User-Agent") or "").encode()
+            self.send_response(200); self.send_header("Content-Type", "text/plain"); self.send_header("Content-Length", str(len(ua)))
+            self.end_headers(); self.wfile.write(ua); return
         raw = MEDIA.get(self.path.split("?")[0])
         if raw is not None:
             self.send_response(200); self.send_header("Content-Type", "application/octet-stream"); self.send_header("Content-Length", str(len(raw)))
@@ -340,14 +374,21 @@ def _run(app, outdir):
 
     # ---- web page, permissions shim, adblock, popup -----------------------------------------------------
     ok("local web page loads", load(t, base + "/perm.html"))
-    source_count = len(SOURCE_VIEWS)
     tab_count = len(w.tabs)
     t.view_source()
-    source_ready = wait_until(lambda: len(SOURCE_VIEWS) == source_count + 1)
-    source_text = SOURCE_VIEWS[-1] if source_ready else ""
-    ok("View page source opens inert serialized DOM",
-       source_ready and len(w.tabs) == tab_count and "navigator.requestMIDIAccess()" in source_text,
-       source_text[:100].replace("\n", " "))
+    wait_until(lambda: len(w.tabs) == tab_count + 1, 3000)
+    vs_tab = w.tabs[-1] if len(w.tabs) == tab_count + 1 else None
+    source_text = {}
+    if vs_tab is not None:
+        wait_until(lambda: vs_tab.page.url().toString().startswith("view-source:") and not vs_tab.loading, 5000)
+        vs_tab.page.runJavaScript("document.body.innerText", lambda v: source_text.setdefault("t", v or ""))
+        wait_until(lambda: "t" in source_text, 3000)
+    ok("View page source opens the real source in a new view-source: tab",
+       vs_tab is not None and "navigator.requestMIDIAccess()" in source_text.get("t", ""),
+       (vs_tab.page.url().toString() if vs_tab else "no tab") + " | " + source_text.get("t", "")[:80].replace("\n", " "))
+    if vs_tab is not None:
+        w.close_tab(vs_tab)
+        w.tabbar.setCurrentIndex(w.tabs.index(t))
     wait_until(lambda: js(t, "!!window.R && R.done"), 5000)
     r = json.loads(js(t, "JSON.stringify(R)") or "{}")
     origin = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -530,16 +571,89 @@ def _run(app, outdir):
        and devtools_theme.get("dark") == app.pal(cur.private)["dark"],
        f"dark mode={devtools_dark}, frontend class={devtools_theme.get('dark')}")
     shot(w, outdir, "devtools")
-    if cur.devtools_host is not None:
-        close_devtools = cur.devtools_host.findChild(QToolButton, "devtoolsClose")
-        if close_devtools:
-            close_devtools.click()
-        wait_until(lambda: cur.devtools is None, 2000)
-        ok("DevTools close button closes dock", cur.devtools is None)
-        cur.toggle_devtools()
-        QTest.qWait(300)
-    cur.toggle_devtools()
+    # keyboard shortcuts drive the panels of the open tools
+    ok("Ctrl+Shift+J opens the Console panel", press(w, "Ctrl+Shift+J") and wait_until(
+        lambda: devtools_js(cur, TAB_SELECTED, "return el?el.getAttribute('aria-selected'):null") == "true", 4000))
+    cur.devtools_panel("Elements")
+    ok("Ctrl+Shift+C starts element selection", press(w, "Ctrl+Shift+C") and wait_until(
+        lambda: devtools_js(cur, INSPECT_BTN, "return el?el.getAttribute('aria-pressed'):null") == "true", 4000))
+    # docking: right -> bottom -> window -> right, switchable while open
+    from PyQt6.QtCore import Qt as _Qt
+    old_dock = app.settings.get("devtools_dock")
+    cur.set_devtools_dock("bottom")
+    QTest.qWait(300)
+    ok("DevTools dock to bottom", cur.split.orientation() == _Qt.Orientation.Vertical and cur.devtools_host is not None
+       and cur.split.indexOf(cur.devtools_host) == 1, str(cur.split.orientation()))
+    shot(w, outdir, "devtools_bottom")
+    cur.set_devtools_dock("window")
+    QTest.qWait(300)
+    ok("DevTools undock into a window", cur.devtools is not None and cur.devtools.isWindow() and cur.devtools_host is None)
+    cur.set_devtools_dock("right")
+    QTest.qWait(300)
+    ok("DevTools dock back to the right", cur.split.orientation() == _Qt.Orientation.Horizontal and cur.devtools_host is not None
+       and not cur.devtools.isWindow())
+    split_sizes = cur.split.sizes()
+    ok("docked DevTools get their remembered share", 0.25 < split_sizes[1] / max(1, sum(split_sizes)) < 0.6, str(split_sizes))
+    close_devtools = cur.devtools_host.findChild(QToolButton, "devtoolsClose")
+    close_devtools.click()
+    wait_until(lambda: cur.devtools is None, 2000)
+    ok("DevTools close button closes dock", cur.devtools is None)
+    # Ctrl+Shift+C with the tools closed opens them already picking an element
+    press(w, "Ctrl+Shift+C")
+    ok("Ctrl+Shift+C opens the tools and starts picking", wait_until(lambda: cur.devtools is not None, 2000) and wait_until(
+        lambda: devtools_js(cur, INSPECT_BTN, "return el?el.getAttribute('aria-pressed'):null") == "true", 8000))
+    # the frontend's own close button must close the dock too
+    devtools_js(cur, CLOSE_BTN, "if(!el) return false; for (const t of ['pointerdown','mousedown','pointerup','mouseup','click']) "
+                                 "el.dispatchEvent(new MouseEvent(t,{bubbles:true,composed:true,cancelable:true,button:0,view:window})); return true")
+    ok("the DevTools frontend's own close button closes the dock", wait_until(lambda: cur.devtools is None, 3000))
+    app.settings.set("devtools_dock", old_dock)
+    press(w, "F12")
+    ok("F12 opens the tools", wait_until(lambda: cur.devtools is not None, 2000))
+    press(w, "F12")
     ok("devtools closes", cur.devtools is None)
+
+    # ---- device mode (Ctrl+Shift+M) and the viewport watchdog ----------------------------------------------------------
+    load(cur, base + "/zoom.html")
+    QTest.qWait(400)
+    ok("Ctrl+Shift+M turns device mode on", press(w, "Ctrl+Shift+M") and cur.device_active and cur.devbar is not None and cur.devbar.isVisible())
+    QTest.qWait(1500)
+    want_w, want_h = cur.devbar.state()[0]
+    aw, ah = cur.stage.width(), cur.stage.height()
+    ok("device mode sizes the viewport", cur.view.width() == min(want_w, aw) and cur.view.height() == min(want_h, ah),
+       f"view {cur.view.width()}x{cur.view.height()}, wanted {want_w}x{want_h} in {aw}x{ah}")
+    ok("the page sees the device width", abs((js(cur, "innerWidth") or 0) - cur.view.width()) <= 1, str(js(cur, "innerWidth")))
+    ua = js(cur, "navigator.userAgent") or ""
+    ok("mobile user agent is applied to navigator.userAgent", "Android" in ua and "Mobile" in ua, ua[:60])
+    ok("mobile user agent is sent with requests", "Android" in str(js_async(cur, "fetch('/uaecho').then(r=>r.text())")))
+    shot(w, outdir, "device_mode")
+    cur.devbar.rotate.click()
+    QTest.qWait(300)
+    ok("rotate swaps width and height", cur.devbar.state()[0] == (want_h, want_w) and cur.view.width() == min(want_h, cur.stage.width()))
+    cur.devbar.device.setCurrentIndex(0)
+    QTest.qWait(200)
+    ok("Responsive preset keeps the size and stays editable", not cur.devbar.w.isReadOnly())
+    press(w, "Ctrl+Shift+M")
+    QTest.qWait(1200)
+    ok("device mode off fills the window again", not cur.device_active and cur.view.size() == cur.stage.size())
+    ok("desktop user agent is back", "Android" not in (js(cur, "navigator.userAgent") or "")
+       and "Android" not in str(js_async(cur, "fetch('/uaecho').then(r=>r.text())")))
+    ok("no user-agent override is left behind", not app.adblock.device_ua)
+
+    # the watchdog: a page that reports a smaller size than its widget gets nudged; a healthy one is left alone
+    nudges = []
+    real_nudge = cur.stage.nudge
+    cur.stage.nudge = lambda: (nudges.append(1), real_nudge())
+    cur.sync_viewport()
+    QTest.qWait(600)
+    ok("viewport watchdog leaves a healthy page alone", not nudges, str(nudges))
+    real_run = cur.page.runJavaScript
+    cur.page.runJavaScript = lambda code, cb=None: cb and cb([300, 200])
+    cur.sync_viewport(tries=1)
+    cur.page.runJavaScript = real_run
+    ok("viewport watchdog nudges a page whose size is stale", len(nudges) == 1, str(nudges))
+    cur.stage.nudge = real_nudge
+    QTest.qWait(200)
+    ok("the nudge restores the view size", cur.view.size() == cur.stage.size())
     load(cur, "http://127.0.0.1:9/unreachable")
     QTest.qWait(1500)
     ok("error page for refused connection", cur.page.url().host() == "error", cur.page.url().toString())

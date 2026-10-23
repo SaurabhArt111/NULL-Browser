@@ -1,16 +1,25 @@
 @echo off
-setlocal EnableDelayedExpansion
-cd /d "%~dp0"
-rem Uses the environment fix_qt_blocked.bat prepared, otherwise the project's own .venv.
-set "PYFILE=%LOCALAPPDATA%\NullBrowser\python.txt"
-if exist "%PYFILE%" (
-    set /p NBPY=<"%PYFILE%"
-    call "!NBPY!" main.py %*
-    exit /b
+setlocal EnableExtensions EnableDelayedExpansion
+set "HERE=%~dp0"
+cd /d "!HERE!"
+title Null Browser
+call "!HERE!find_python.bat"
+if errorlevel 1 (
+    echo Null Browser is not set up on this PC yet - running the one-time setup first...
+    call "!HERE!..\..\setup_and_run.bat" --no-run
+    call "!HERE!find_python.bat"
 )
-if exist "..\..\.venv\Scripts\python.exe" (
-    "..\..\.venv\Scripts\python.exe" main.py %*
-    exit /b
+if not defined NB_PY (
+    echo.
+    echo Setup did not finish, so there is nothing to start. See the messages above ^(docs\WINDOWS_BLOCKED.md explains the Windows block^).
+    pause
+    exit /b 1
 )
-echo No environment found. Run fix_qt_blocked.bat ^(it installs everything Null Browser needs^), or setup_and_run.bat in the project root.
-pause
+"!NB_PY!" main.py %*
+set "CODE=!errorlevel!"
+if not "!CODE!"=="0" (
+    echo.
+    echo Null Browser stopped with code !CODE!. The messages above and the log folder in %%APPDATA%%\NullBrowser say why.
+    pause
+)
+exit /b !CODE!
