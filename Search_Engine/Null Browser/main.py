@@ -44,20 +44,7 @@ def _explain_block(err):
         pass
 
 
-def _run_engine():
-    """`NullBrowser.exe --run-engine`: be the local search server (the .exe has no separate python to start it with). Qt is never loaded."""
-    import runpy
-    if getattr(sys, "frozen", False):
-        engine = os.path.join(getattr(sys, "_MEIPASS", HERE), "Search_Engine", "Null Search Engine")
-    else:
-        engine = os.path.join(os.path.dirname(HERE), "Null Search Engine")
-    runpy.run_path(os.path.join(engine, "src", "main.py"), run_name="__main__")
-
-
 if __name__ == "__main__":
-    if "--run-engine" in sys.argv[1:]:
-        _run_engine()
-        raise SystemExit(0)
     try:
         from null_browser.main import main
         code = main()

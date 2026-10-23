@@ -52,11 +52,6 @@ state and signals; nothing in the request interceptor may block.
 
 ## What changed in this release
 
-* **Developer tools** (`ui/tab_devtools.py`, `ui/devicemode.py`): F12 / Ctrl+Shift+I toggle; Ctrl+Shift+J Console; Ctrl+Shift+C element picker; Ctrl+Shift+M device mode; Ctrl+U `view-source:` tab. Dock right / bottom / window can be changed from the DevTools header while open; the size is remembered (`devtools_size`). Device mode sizes the viewport (media queries see it) and, for phone / tablet presets, sends a mobile `User-Agent` for that tab's site only.
-* **Viewport watchdog** (`Tab.sync_viewport`): compares `innerWidth/innerHeight` with the widget after resizes, maximise, tab switches and DevTools changes, and nudges Chromium when they differ (the "page fills only part of the window" glitch).
-* **Icon** (`null_browser/assets`, `tools/make_icon.py`) and **exe build** (`NullBrowser.spec`, `build_exe.bat`, `docs/BUILD_EXE.md`). The `.exe` also runs the search server (`--run-engine`).
-* **Launchers**: `find_python.bat` (shared), `run_null_browser.bat`, root `setup_and_run.bat` / `run_browser_only.bat` / `run_project.bat`.
-
 **Flicker and lag**
 * Removed the colour veil that faded over the page on every tab switch.
 * The load bar no longer appears/disappears (it used to resize the page area, causing a re-layout and repaint on every navigation:

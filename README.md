@@ -12,7 +12,7 @@ permissions, ad blocking, error handling, notifications, the search link) is Nul
 
 | OS | Run |
 |---|---|
-| Windows | double-click **`setup_and_run.bat`** (first run: prepares a private Python environment in your user profile, installs everything, makes a **Null Browser** shortcut with the new icon, starts the browser). Afterwards use the shortcut, **`run_browser_only.bat`** (browser only) or **`run_project.bat`** (browser + search server window). All of them check that Qt loads and run the setup by themselves if it does not. To get a real `NullBrowser.exe`, run `Search_Engine\Null Browser\build_exe.bat` (see `Search_Engine/Null Browser/docs/BUILD_EXE.md`). |
+| Windows | double-click **`setup_and_run.bat`** (first run: creates `.venv`, installs dependencies, starts the browser). Afterwards use **`run_browser.bat`**. |
 | macOS / Linux | `python3 -m venv .venv && . .venv/bin/activate && pip install -r "Search_Engine/Null Browser/requirements.txt" -r "Search_Engine/Null Search Engine/requirements.txt" && python "Search_Engine/Null Browser/main.py"` |
 
 Needs Python 3.10 or newer (3.12 / 3.13 recommended) and an internet connection for the first install. Setup installs prebuilt
@@ -24,10 +24,6 @@ Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--d
 `--data-dir` gives a portable profile.
 
 ## What's new in this update
-
-* **Developer tools, properly.** F12 / **Ctrl+Shift+I** toggle, **Ctrl+Shift+J** opens the Console, **Ctrl+Shift+C** starts "select an element", **Ctrl+Shift+M** is a device mode (phone / tablet / laptop sizes, rotate, mobile user agent), **Ctrl+U** opens the real `view-source:` page. The DevTools header switches between dock right / bottom / separate window while open, remembers its size, and the frontend's own close button works. Tab mute moved to **Ctrl+M**.
-* **Page not filling the window** (seen after maximising): the browser now checks the page size against the window after every resize and corrects it.
-* **New Null icon** (window, taskbar, shortcuts, favicon, `.exe`), and `NullBrowser.exe` can be built (`build_exe.bat`).
 
 **Performance / flicker update.** The code was reorganised (`privacy/`, `engine/`, and `ui/`, `app` split into focused modules; see `Search_Engine/Null Browser/README.md`),
 the colour veil on tab switches and the load bar's page resize were removed, the ad blocker's scriptlets are cleaned up before any engine builds (fewer, safer, scoped; configurable in

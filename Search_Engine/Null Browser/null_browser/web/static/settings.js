@@ -190,7 +190,7 @@
     card(switchRow("Show desktop notifications", "Download alerts and website notifications you allowed use your operating system's notification centre", S.desktop_notifications, v => set("desktop_notifications", v)),
       switchRow("Keep running in the system tray when closed", "Closing the last window hides Null Browser to the tray so downloads continue", S.background_running, v => set("background_running", v))),
     h("h2", {}, "Developer"),
-    card(selectRow("DevTools dock position", "F12 / Ctrl+Shift+I toggles DevTools for the current tab (you can also switch the side from the DevTools header)", [["right", "Dock to right"], ["bottom", "Dock to bottom"], ["window", "Separate window"]], S.devtools_dock, v => set("devtools_dock", v)),
+    card(selectRow("DevTools dock position", "F12 / Ctrl+Shift+I toggles DevTools for the current tab", [["right", "Dock to right"], ["bottom", "Dock to bottom"], ["window", "Separate window"]], S.devtools_dock, v => set("devtools_dock", v)),
       h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, "Remote debugging port"), h("div", { class: "sub" }, "0 disables it. Lets Chrome DevTools / Playwright / Puppeteer attach on http://localhost:PORT. Needs a restart.")), h("input", { type: "number", value: S.remote_debugging_port, min: 0, max: 65535, style: "width:100px", onchange: e => set("remote_debugging_port", +e.target.value) })),
       link("Logs & errors", "Self-healing error handler output", "null://logs"), link("Version & build info", "", "null://version")),
     card(actionRow("Relaunch in safe mode", "Starts with ad blocking and the JavaScript API gate off - use if something is broken", "Relaunch", () => api("app/restart", { safe: true })),

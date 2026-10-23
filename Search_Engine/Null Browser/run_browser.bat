@@ -1,4 +1,8 @@
 @echo off
-rem Old name, kept so existing shortcuts keep working.
-call "%~dp0run_null_browser.bat" %*
-exit /b %errorlevel%
+cd /d "%~dp0"
+if exist "..\..\.venv\Scripts\python.exe" (
+    "..\..\.venv\Scripts\python.exe" main.py %*
+) else (
+    echo Environment not found. Run setup_and_run.bat in the project root first.
+    pause
+)

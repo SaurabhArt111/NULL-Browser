@@ -130,7 +130,7 @@ class TabStrip(QTabBar):
                 self.setTabButton(index, QTabBar.ButtonPosition.LeftSide, audio)
             audio.setIcon(self.app.icon("mute" if muted else "volume", size=14))
             audio.setIconSize(QSize(13, 13))
-            tip(audio, "Unmute tab" if muted else "Mute tab", "This tab is playing sound" if not muted else "Sound is muted for this tab", "Ctrl+M")
+            tip(audio, "Unmute tab" if muted else "Mute tab", "This tab is playing sound" if not muted else "Sound is muted for this tab", "Ctrl+Shift+M")
         elif audio is not None:
             self.setTabButton(index, QTabBar.ButtonPosition.LeftSide, None)
             audio.deleteLater()

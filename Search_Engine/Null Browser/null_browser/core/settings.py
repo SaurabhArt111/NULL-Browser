@@ -60,7 +60,6 @@ DEFAULTS = {
     "accept_languages": "en-US,en",
     # system / developer
     "devtools_dock": "right",          # right | bottom | window
-    "devtools_size": 0.42,             # share of the tab the docked DevTools take (remembered when the divider is dragged)
     "remote_debugging_port": 0,
     "spellcheck": False,
     "desktop_notifications": True,

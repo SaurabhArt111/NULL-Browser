@@ -446,8 +446,7 @@ def about_info(app, p, private):
     sc = [("Ctrl+T", "New tab"), ("Ctrl+N", "New window"), ("Ctrl+Shift+N", "New InPrivate window"), ("Ctrl+W", "Close tab"), ("Ctrl+Shift+T", "Reopen closed tab"),
           ("Ctrl+L / F6", "Focus address bar"), ("Ctrl+K / Ctrl+E", "Search from address bar"), ("Ctrl+D", "Bookmark this page"), ("Ctrl+Shift+B", "Show / hide bookmarks bar"),
           ("Ctrl+H", "History"), ("Ctrl+J", "Downloads"), ("Ctrl+Shift+O", "Bookmark manager"), ("Ctrl+,", "Settings"), ("Ctrl+Shift+Del", "Clear browsing data"),
-          ("Ctrl+F / F3", "Find in page"), ("Ctrl+P", "Print"), ("Ctrl+S", "Save page"), ("Ctrl+U", "View page source"), ("F12 / Ctrl+Shift+I", "Developer tools"), ("Ctrl+Shift+J", "JavaScript console"),
-          ("Ctrl+Shift+C", "Inspect element"), ("Ctrl+Shift+M", "Device mode (responsive / mobile)"), ("Ctrl+M", "Mute / unmute tab"),
+          ("Ctrl+F / F3", "Find in page"), ("Ctrl+P", "Print"), ("Ctrl+S", "Save page"), ("Ctrl+U", "View source"), ("F12 / Ctrl+Shift+I", "Developer tools"),
           ("Ctrl +/- / 0", "Zoom in / out / reset"), ("F11", "Full screen"), ("Ctrl+Tab / Ctrl+Shift+Tab", "Next / previous tab"), ("Ctrl+1…9", "Jump to tab"), ("Alt+←/→", "Back / forward")]
     return {"versions": app.versions(), "pages": [{"url": u, "icon": i, "desc": d} for u, i, d in pages], "shortcuts": sc}
 
