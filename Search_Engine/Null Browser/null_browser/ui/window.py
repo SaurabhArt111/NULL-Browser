@@ -232,7 +232,10 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         """Small non-blocking message at the bottom of the window."""
         old = getattr(self, "_toast", None)
         if old is not None:
-            old.deleteLater()
+            try:
+                old.deleteLater()
+            except RuntimeError:                      # the label was already destroyed with its timer or parent
+                pass
         p = self.pal
         lab = QLabel(text, self.centralWidget())
         lab.setWordWrap(True)
@@ -243,7 +246,14 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         lab.show()
         lab.raise_()
         self._toast = lab
-        QTimer.singleShot(ms, lambda l=lab: l.deleteLater() if l is getattr(self, "_toast", None) else None)
+        def gone(l=lab):
+            try:
+                if l is getattr(self, "_toast", None):
+                    l.deleteLater()
+                    self._toast = None
+            except RuntimeError:
+                pass
+        QTimer.singleShot(ms, gone)
 
     def offer_safe_mode(self):
         if getattr(self, "_safe_offer", None) is not None:
@@ -579,6 +589,13 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
             fallback = "http://" + url[len("https://"):]
         else:
             fallback = ""
+        if not is_search and self.app.singleton_host(url):
+            blank = (t is not None and not new_tab and t.is_internal() and t.page.url().host() == "newtab" and len(self.tabs) > 1)
+            found = self.app.focus_internal_page(url, self.private, exclude=t)
+            if found is not None:                         # already open in another tab: go there (and drop the empty New Tab we typed it in)
+                if blank:
+                    self.close_tab(t)
+                return
         if new_tab or t is None:
             t = self.new_tab(None, background=False)
         t._upgraded = False
@@ -588,6 +605,10 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         t.view.setFocus()
 
     def open_url(self, url, new_tab=True, background=False):
+        if self.app.singleton_host(url):                 # History, Settings, Downloads, Bookmarks...: one tab each, switch to it if it is open
+            found = self.app.focus_internal_page(url, self.private, background=background)
+            if found is not None:
+                return found
         if new_tab or not self.current():
             return self.new_tab(url, background=background)
         self.current().load(url)

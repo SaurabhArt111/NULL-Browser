@@ -91,6 +91,16 @@ state and signals; nothing in the request interceptor may block.
   safe browsing pings, crash/usage reports, DNS prefetch, sync, domain reliability). Search suggestions and ad-list updates are off by
   default. The user agent no longer carries a Null Browser token.
 
+**One tab per built-in page**
+* History, Bookmarks, Downloads, Settings, About, Version and Logs open in one tab only. Using the menu, a shortcut, a link on another
+  built-in page or the address bar switches to the tab that already has it (Settings sections reuse the Settings tab and navigate it).
+
+**Google sign-in compatibility**
+* Google may answer "This browser or app may not be secure" to an embedded browser. For Google's own sites only, the browser now
+  announces the Chrome brand (request header + `navigator.userAgentData`) and provides `window.chrome`
+  (`engine/google_compat.py`, switch in Settings -> Google account). This could not be tested against Google from the build
+  environment and Google may still refuse.
+
 **Limits you should know about**
 * Qt WebEngine cannot load Chrome extensions or the Chrome Web Store, and there is no Chrome Sync service.
 * The VPN is a browser-only proxy tunnel, not a system VPN, and needs a server from you. Chromium cannot authenticate to SOCKS5.

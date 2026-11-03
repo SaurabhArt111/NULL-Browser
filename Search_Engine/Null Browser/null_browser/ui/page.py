@@ -2,7 +2,7 @@
 import logging
 import time
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWebEngineCore import QWebEnginePage
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (QInputDialog, QMessageBox)
@@ -38,6 +38,12 @@ class BrowserPage(QWebEnginePage):
                 guard = getattr(self.tab, "nav_guard", None)             # installed-app windows keep out-of-scope links out of the app
                 if guard is not None and not guard(url, nav_type):
                     return False
+                if scheme == SCHEME and nav_type == NAV.NavigationTypeLinkClicked and self.url().host() != url.host():
+                    tab = self.tab                                           # a link to History / Settings / Downloads...: reuse the tab that has it
+                    if tab.app.singleton_host(url) and tab.app.focus_internal_page(url, tab.private, exclude=tab) is not None:
+                        if (self.url().isEmpty() or self.url().toString() == "about:blank") and not tab.lazy_url:
+                            QTimer.singleShot(0, lambda: tab.closeRequested.emit(tab))       # a blank tab opened just for this click
+                        return False
                 if scheme not in EXTERNAL_OK:
                     # fb:// instagram:// twitter:// reddit:// intent:// ... : sites fire these at load to push their app.
                     # Only a real click may open a prompt; anything else is dropped silently (like Chrome does).

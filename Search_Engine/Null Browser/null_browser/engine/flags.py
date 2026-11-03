@@ -26,7 +26,6 @@ def build(settings_path, safe=False, enhanced=True, debug=False):
         flags.append("--disable-gpu")
     else:
         flags.append("--enable-gpu-rasterization")          # page tiles are drawn on the GPU: smoother scrolling and less CPU on heavy feeds
-        flags.append("--enable-zero-copy")                  # rasterised tiles go to the compositor without an extra copy
     if (data.get("permission_defaults") or {}).get("js_optimization") == "block" and not safe:
         flags.append("--js-flags=--jitless")
     if safe:

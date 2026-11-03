@@ -50,7 +50,7 @@ class WindowAppsMixin:
         self.vpn_btn.hide()
         self.account_btn = mk(("Google account", "Sign in with Google and manage your profile"), self.show_account_menu)
         self.account_btn.setIconSize(QSize(24, 24))
-        self.omni.install_chip.clicked.connect(self.install_current)
+        self.omni.install_chip.clicked.connect(lambda *_: self.install_current())
         self.app.accountChanged.connect(self.refresh_account_button)
         self.app.pwaChanged.connect(self.update_install_chip)
         self.refresh_account_button()
@@ -153,7 +153,7 @@ class WindowAppsMixin:
         chip.setIcon(self.icon("install", color=self.accent, size=16))
 
     @crash.guarded
-    def install_current(self):
+    def install_current(self, *_):
         t = self.current()
         if t is not None:
             self.app.install_from_tab(t, self)

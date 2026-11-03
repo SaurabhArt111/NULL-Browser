@@ -19,6 +19,7 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor, QWebEngineUrlRequestInfo
 
 from ..core import paths
+from ..engine.google_compat import is_google_host
 from .filters import FilterManager
 from .media_hosts import SKIP_TYPES, is_media_host
 
@@ -78,6 +79,7 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
         self.enabled = True
         self.block_trackers = True
         self.send_dnt = True
+        self.client_hints = None                     # bytes for Google's hosts when the sign-in compatibility setting is on
         self._cache = {}
         self._stubs = {}                                   # id -> (mime, bytes): harmless replacements served at null://stub/<id>
         self.filters = FilterManager(settings, self)
@@ -220,6 +222,9 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
             if self.send_dnt:
                 info.setHttpHeader(b"DNT", b"1")
                 info.setHttpHeader(b"Sec-GPC", b"1")
+            ch = self.client_hints
+            if ch is not None and is_google_host(url.host()):
+                info.setHttpHeader(b"Sec-CH-UA", ch)                 # Google's own sites see the Chrome brand (engine/google_compat.py)
             if not self.enabled:
                 return
             rtype = info.resourceType()

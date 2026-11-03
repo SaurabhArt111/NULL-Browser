@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 from . import constants as C
 from .app_accounts import AccountsMixin
 from .app_data import BrowsingDataMixin
+from .app_pages import InternalPagesMixin
 from .app_pwa import PwaMixin
 from .app_instances import SingleInstanceMixin
 from .app_policies import PoliciesMixin
@@ -61,7 +62,7 @@ def forward_to_running_instance(urls, private, app_id=None):
     return True
 
 
-class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin, BrowsingDataMixin, AccountsMixin, PwaMixin, QObject):
+class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin, BrowsingDataMixin, AccountsMixin, PwaMixin, InternalPagesMixin, QObject):
     """Application object: owns the shared services and the windows. Profiles, session, policies, IPC and data clearing are mixins (app_*.py)."""
     themeChanged = pyqtSignal()
     accountChanged = pyqtSignal()
@@ -336,10 +337,11 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
             if webrtc is not None:
                 for t in self.all_tabs():
                     t.page.settings().setAttribute(webrtc, bool(v))
-        elif key == "custom_autoscroll":
+        elif key in ("custom_autoscroll", "google_compat"):
             for p in (self.profile, self._private_profile):
                 if p is not None:
                     pagescripts.install(p, self.settings)
+            self.apply_google_compat()
         elif key in ("font_size", "min_font_size", "web_dark_mode", "smooth_scrolling"):
             for t in self.all_tabs():
                 self.apply_page_settings(t.page)

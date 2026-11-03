@@ -113,6 +113,7 @@ def run_ext(S, app, w, base, outdir):
     QTest.qWait(300)
     run_ext2(S, app, w, base, outdir)
     run_ext3(S, app, w, base, outdir)
+    run_ext4(S, app, w, base, outdir)
 
 
 # ======================================================================================================================
@@ -123,7 +124,7 @@ def run_ext2(S, app, w, base, outdir):
     import socket
     import threading
 
-    from PyQt6.QtCore import QTimer
+    from PyQt6.QtCore import QTimer, Qt
     from PyQt6.QtNetwork import QNetworkCookie
     from PyQt6.QtWidgets import QApplication
 
@@ -247,7 +248,7 @@ def run_ext2(S, app, w, base, outdir):
     timer = QTimer()
     timer.timeout.connect(accept_install)
     timer.start(200)
-    w.install_current()
+    QTest.mouseClick(w.omni.install_chip, Qt.MouseButton.LeftButton)          # a real click: Qt passes `checked` to the slot
     wait_until(lambda: bool(app.pwa.apps), 12000)
     timer.stop()
     ok("installing from the address bar creates an app", len(app.pwa.apps) == 1, str(list(app.pwa.apps)))
@@ -388,3 +389,82 @@ def run_ext3(S, app, w, base, outdir):
             db.delete_bookmark(b["id"])
     app.bookmarks_changed()
     QTest.qWait(200)
+
+
+# ======================================================================================================================
+def run_ext4(S, app, w, base, outdir):
+    """One tab per built-in page, toast safety, Google sign-in compatibility script."""
+    from .engine import google_compat
+    ok, js, load, wait_until = S.ok, S.js, S.load, S.wait_until
+
+    # ---- a toast whose label was already destroyed must not raise -----------------------------------------------------
+    w.show_toast("first")
+    w._toast.deleteLater()
+    QTest.qWait(80)
+    try:
+        w.show_toast("second")
+        good = True
+    except RuntimeError:
+        good = False
+    ok("a new toast works after the previous label was destroyed", good)
+
+    # ---- singleton built-in pages -------------------------------------------------------------------------------------
+    def tabs_showing(host):
+        return [t for t in w.tabs if t.real_url().scheme() == "null" and t.real_url().host() == host]
+    for t in tabs_showing("downloads") + tabs_showing("history") + tabs_showing("settings"):
+        w.close_tab(t)
+    QTest.qWait(200)
+    first = w.open_url("null://downloads")
+    wait_until(lambda: first.page.url().host() == "downloads", 5000)
+    n = len(w.tabs)
+    other = w.new_tab(base + "/short.html")
+    QTest.qWait(300)
+    again = w.open_url("null://downloads")
+    QTest.qWait(300)
+    ok("opening Downloads again does not open a second Downloads tab", again is first and len(tabs_showing("downloads")) == 1 and len(w.tabs) == n + 1, f"{len(w.tabs)} tabs")
+    ok("...it switches to the tab that already has it", w.current() is first)
+    # a link on one built-in page to another built-in page that is already open
+    hist = w.open_url("null://history")
+    wait_until(lambda: hist.page.url().host() == "history" and hist.page.title() != "", 5000)
+    QTest.qWait(500)
+    w.tabbar.setCurrentIndex(w.index_of(first))
+    QTest.qWait(300)
+    count = len(w.tabs)
+    js(first, "document.querySelector('.sidebar a[href=\"null://history\"]').click(); 0")
+    QTest.qWait(600)
+    ok("History link in the Downloads sidebar goes to the open History tab", w.current() is hist and len(w.tabs) == count, f"{len(w.tabs)} vs {count}")
+    ok("...and the Downloads tab stays on Downloads", first.page.url().host() == "downloads")
+    # settings sub-pages reuse the Settings tab and navigate it
+    st = w.open_url("null://settings")
+    wait_until(lambda: st.page.url().host() == "settings", 5000)
+    count = len(w.tabs)
+    st2 = w.open_url("null://settings/vpn")
+    QTest.qWait(800)
+    ok("Settings > VPN reuses the Settings tab and shows that section", st2 is st and len(w.tabs) == count and st.page.url().path().endswith("/vpn"), st.page.url().toString())
+    # typing it in an empty New Tab switches to the open one and drops the empty tab
+    blank = w.new_tab(None)
+    QTest.qWait(500)
+    nb = len(w.tabs)
+    w.omni.edit.setText("null://history")
+    w.navigate_text("null://history")
+    QTest.qWait(500)
+    ok("typing null://history in an empty New Tab goes to the open History tab", w.current() is hist, str(w.current().real_url().toString()))
+    ok("...and the empty New Tab is closed", len(w.tabs) == nb - 1 and blank not in w.tabs)
+    for t in (first, hist, st, other):
+        if t in w.tabs:
+            w.close_tab(t)
+    QTest.qWait(200)
+
+    # ---- Google sign-in compatibility ----------------------------------------------------------------------------------
+    t = w.new_tab(base + "/short.html")
+    wait_until(lambda: t.page.url().path() == "/short.html", 5000)
+    QTest.qWait(300)
+    before = js(t, "JSON.stringify((navigator.userAgentData||{}).brands||[])") or ""
+    ok("without the compatibility script the page sees no Google Chrome brand", "Google Chrome" not in before, before)
+    js(t, google_compat.script_source("134", hosts_regex=".*"))
+    after = js(t, "JSON.stringify(navigator.userAgentData.brands)") or ""
+    ok("the compatibility script adds the Google Chrome brand", '"Google Chrome"' in after and '"134"' in after, after)
+    ok("window.chrome exists afterwards", js(t, "typeof window.chrome") == "object")
+    ok("the script is only installed for Google hosts by default", "google" in google_compat.HOSTS_REGEX and not google_compat.is_google_host("127.0.0.1"))
+    ok("the interceptor sends the Chrome brand only when the setting is on", (app.adblock.client_hints is not None) == bool(app.settings.get("google_compat")))
+    w.close_tab(t)

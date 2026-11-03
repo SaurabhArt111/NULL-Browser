@@ -24,6 +24,13 @@ class AccountsMixin:
         self._signing_in = False
         self._identity_timer = QTimer(self, singleShot=True, interval=1800, timeout=self.refresh_identity)
         self._avatar_nam = None
+        self.apply_google_compat()
+
+    def apply_google_compat(self):
+        """Sign-in compatibility (engine/google_compat.py): the Chrome brand in the request header for Google's own hosts."""
+        from .engine import google_compat
+        on = bool(self.settings.get("google_compat"))
+        self.adblock.client_hints = google_compat.client_hints(self.profile.httpUserAgent()) if on else None
 
     # ---- state ---------------------------------------------------------------------------------
     def account_info(self):

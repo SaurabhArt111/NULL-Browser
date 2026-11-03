@@ -5,9 +5,12 @@ import os
 
 from PyQt6.QtWebEngineCore import QWebEngineScript
 
+from . import google_compat
+
 log = logging.getLogger("null.pagescripts")
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "js")
 AUTOSCROLL = "null-autoscroll"
+GOOGLE = "null-google-compat"
 WORLD = QWebEngineScript.ScriptWorldId.ApplicationWorld
 
 
@@ -19,8 +22,17 @@ def _read(name):
 def install(profile, settings):
     """(Re)install the page scripts on a profile according to the settings."""
     coll = profile.scripts()
-    for sc in coll.find(AUTOSCROLL):
-        coll.remove(sc)
+    for name in (AUTOSCROLL, GOOGLE):
+        for sc in coll.find(name):
+            coll.remove(sc)
+    if settings.get("google_compat"):
+        sc = QWebEngineScript()
+        sc.setName(GOOGLE)
+        sc.setSourceCode(google_compat.script_source(google_compat.chrome_major(profile.httpUserAgent())))
+        sc.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+        sc.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)           # navigator.userAgentData lives in the page's own world
+        sc.setRunsOnSubFrames(True)
+        coll.insert(sc)
     if settings.get("custom_autoscroll"):
         sc = QWebEngineScript()
         sc.setName(AUTOSCROLL)

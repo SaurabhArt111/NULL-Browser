@@ -63,6 +63,8 @@
     }
     out.push(h("h2", {}, "Staying signed in"),
       card(switchRow("Keep my Google sign-in when I clear browsing data", "On (default): “Clear browsing data”, “Clear on exit” and private-window cleanup remove everything except Google's sign-in cookies. Every other site's cookies are deleted as usual. Turn off and Google is cleared like any other site.", A.keep_on_clear, async v => { await set("google_keep_signed_in", v); D.account.keep_on_clear = v; })),
+      h("h2", {}, "Sign-in compatibility"),
+      card(switchRow("Present this browser to Google as Chrome", "Google refuses to sign in to what it takes for an embedded browser (“This browser or app may not be secure”). When this is on, only Google's own sites (google.com, youtube.com) are told this browser is Chrome, through the brand list in the request and in the page. It is no guarantee: Google also checks things it does not publish, and may still refuse. If it does, you can keep using Null Browser without signing in.", S.google_compat !== false, v => set("google_compat", v))),
       h("h2", {}, "What this is, and is not"),
       card(h("div", { class: "row", style: "display:block" }, h("div", { class: "sub", style: "line-height:1.55" },
         "Signing in lets Google sites (Gmail, YouTube, Drive, Search) recognise you in every window. It does not turn on Chrome Sync: bookmarks, history, passwords and extensions are not uploaded anywhere. Null Browser has no sync server, and by design nothing leaves this computer except the pages you open."))));

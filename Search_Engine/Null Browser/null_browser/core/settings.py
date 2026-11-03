@@ -58,6 +58,7 @@ DEFAULTS = {
     "memory_saver_minutes": 15,
     "hardware_acceleration": True,
     "smooth_scrolling": True,
+    "google_compat": True,             # present the Chrome brand to Google sign-in pages (engine/google_compat.py)
     "custom_autoscroll": True,         # Chrome-style middle-click auto-scroll drawn by the browser (engine/js/autoscroll.js)
     # languages
     "accept_languages": "en-US,en",
