@@ -1,7 +1,7 @@
 """Small animated widgets: toolbar buttons that fade their hover background.
 
 (A colour veil that faded over the page on every tab switch used to live here. It made every tab change flash, so it was removed.)"""
-from PyQt6.QtCore import QEasingCurve, QRectF, Qt, QVariantAnimation
+from PyQt6.QtCore import QEasingCurve, QRectF, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import QToolButton
 
@@ -68,3 +68,61 @@ class HoverToolButton(QToolButton):
             p.drawRoundedRect(r, rad, rad)
             p.end()
         super().paintEvent(ev)
+
+
+class NavButton(HoverToolButton):
+    """Toolbar button that understands every mouse button like Chrome's:
+    left click = normal click, middle click = `middleClicked`, right click or holding the left button = `menuRequested` (history list)."""
+    middleClicked = pyqtSignal()
+    menuRequested = pyqtSignal()
+
+    HOLD_MS = 450
+
+    def __init__(self, colors, radius=None, parent=None):
+        super().__init__(colors, radius, parent)
+        self._hold = QTimer(self, singleShot=True, interval=self.HOLD_MS, timeout=self._held)
+        self._fired = False
+        self._wants_menu = False
+
+    def wants_hold_menu(self, on):
+        self._wants_menu = bool(on)
+
+    def _held(self):
+        if self.isDown() and self._wants_menu and self.isEnabled():
+            self._fired = True
+            self.setDown(False)
+            self.menuRequested.emit()
+
+    def mousePressEvent(self, ev):
+        self._fired = False
+        if ev.button() == Qt.MouseButton.LeftButton and self._wants_menu:
+            self._hold.start()
+        elif ev.button() == Qt.MouseButton.RightButton:
+            ev.accept()
+            if self._wants_menu and self.isEnabled():
+                self.menuRequested.emit()
+            return
+        elif ev.button() == Qt.MouseButton.MiddleButton:
+            ev.accept()
+            return
+        super().mousePressEvent(ev)
+
+    def mouseReleaseEvent(self, ev):
+        self._hold.stop()
+        if ev.button() == Qt.MouseButton.MiddleButton:
+            if self.isEnabled() and self.rect().contains(ev.position().toPoint()):
+                self.middleClicked.emit()
+            ev.accept()
+            return
+        if ev.button() == Qt.MouseButton.RightButton:
+            ev.accept()
+            return
+        if self._fired:                                     # the history menu was shown: do not also "click"
+            self._fired = False
+            self.setDown(False)
+            ev.accept()
+            return
+        super().mouseReleaseEvent(ev)
+
+    def contextMenuEvent(self, ev):
+        ev.accept()                                         # handled in mousePressEvent

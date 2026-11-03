@@ -108,6 +108,13 @@ class NullSchemeHandler(QWebEngineUrlSchemeHandler):
                 return self._favicon(job, query.get("u", ""), strict=query.get("strict") == "1")
             if name == "bg":
                 return self._newtab_bg(job)
+            if name == "pwaicon":
+                aid = query.get("id", "")
+                path = self.app.pwa.icon_path(aid) if self.app.pwa.get(aid) else ""
+                if not path or not os.path.isfile(path):
+                    return job.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
+                with open(path, "rb") as f:
+                    return self._reply(job, f.read(), "image/png", extra={"Cache-Control": "no-cache"})
             safe = os.path.normpath(name)
             if safe.startswith("..") or os.path.isabs(safe):
                 return job.fail(QWebEngineUrlRequestJob.Error.UrlInvalid)

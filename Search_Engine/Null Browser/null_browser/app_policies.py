@@ -27,13 +27,13 @@ def ipc_name():
     return f"NullBrowser-{re.sub(r'[^A-Za-z0-9_-]', '_', user)}-{tag}"
 
 
-def forward_to_running_instance(urls, private):
+def forward_to_running_instance(urls, private, app_id=None):
     """If another Null Browser is already running on this profile, hand it the URLs and return True."""
     sock = QLocalSocket()
     sock.connectToServer(ipc_name())
     if not sock.waitForConnected(400):
         return False
-    sock.write(json.dumps({"urls": urls, "private": private}).encode() + b"\n")
+    sock.write(json.dumps({"urls": urls, "private": private, "app": app_id}).encode() + b"\n")
     sock.waitForBytesWritten(1000)
     sock.disconnectFromServer()
     return True
@@ -61,7 +61,7 @@ class PoliciesMixin:
         s.setAttribute(WA.ScrollAnimatorEnabled, bool(st.get("smooth_scrolling")))
         s.setAttribute(WA.PlaybackRequiresUserGesture, self.perms.default("autoplay") == "block")
         s.setAttribute(WA.JavascriptCanAccessClipboard, True)
-        s.setAttribute(WA.JavascriptCanPaste, True)
+        s.setAttribute(WA.JavascriptCanPaste, False)       # pages cannot read the clipboard behind your back (a real Ctrl+V still pastes)
 
     def apply_site_policy(self, tab, url):
         page, s = tab.page, tab.page.settings()

@@ -65,7 +65,7 @@ function shell({ active, title, searchPlaceholder, onSearch, nav, sidebarExtra }
   document.title = title;
   document.body.innerHTML = "";
   const search = onSearch ? h("div", { class: "search" }, h("span", { html: icon("search") }), h("input", { type: "text", id: "q", placeholder: searchPlaceholder || "Search", autocomplete: "off", spellcheck: "false" })) : h("div", { class: "search" });
-  const top = h("div", { class: "topbar" }, h("div", { class: "brand", title: "Null Browser", "data-hint": "You are on a built-in page" }, h("div", { class: "logo" }, "N"), title), search);
+  const top = h("div", { class: "topbar" }, h("div", { class: "brand", title: "Null Browser", "data-hint": "You are on a built-in page" }, h("img", { class: "logo", src: "/_/icon.svg", alt: "" }), title), search);
   const side = h("nav", { class: "sidebar nav" },
     ...(nav || NAV).map(([id, label, ic, href]) => h("a", { href: href || `null://${id}`, title: label, class: id === active ? "active" : "" }, h("span", { html: icon(ic) }), label)),
     sidebarExtra || "");

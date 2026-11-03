@@ -70,6 +70,43 @@ class MenusMixin:
             for o in self.tabs[i + 1:]:
                 self.close_tab(o)
 
+    def history_menu(self, direction):
+        """Back / Forward button: the list of pages in that direction (right-click or hold the button)."""
+        t = self.current()
+        if t is None:
+            return
+        h = t.page.history()
+        items = list(reversed(h.backItems(12))) if direction < 0 else list(h.forwardItems(12))
+        if not items:
+            return
+        btn = self.back_btn if direction < 0 else self.fwd_btn
+        m = QMenu(self)
+        for n, it in enumerate(items, 1):
+            a = m.addAction(self._fav_icon(it.url().toString()), (it.title() or it.url().toString())[:70])
+            a.triggered.connect(lambda _=False, k=n * direction: self.history_open(k))
+        m.exec(btn.mapToGlobal(QPoint(0, btn.height() + 2)))
+        m.deleteLater()
+        btn.setDown(False)
+
+    def history_open(self, steps, new_tab=False):
+        """Go `steps` entries back (negative) or forward (positive); with new_tab the target opens in a background tab instead."""
+        t = self.current()
+        if t is None:
+            return
+        h = t.page.history()
+        i = h.currentItemIndex() + (steps if steps else 0)
+        if steps in (-1, 1) and new_tab:
+            items = h.items()
+            if 0 <= i < len(items):
+                self.new_tab(items[i].url().toString(), background=True)
+            return
+        if steps in (-1, 1) and not new_tab:
+            self.cur_do("back" if steps < 0 else "forward")
+            return
+        items = h.items()
+        if 0 <= i < len(items):
+            h.goToItem(items[i])
+
     def tab_search_menu(self):
         m = QMenu(self)
         for i, t in enumerate(self.tabs):
@@ -87,6 +124,7 @@ class MenusMixin:
         m.addSeparator()
         A("History", lambda: self.open_url(f"{SCHEME}://history"), "Ctrl+H", "history")
         A("Downloads", lambda: self.open_url(f"{SCHEME}://downloads"), "Ctrl+J", "download")
+        self.build_apps_menu(m)
         bm = m.addMenu(self.icon("bookmark"), "Bookmarks")
         A("Bookmark this tab…", self.toggle_bookmark, "Ctrl+D", "star", bm)
         A("Show bookmarks bar", lambda: self.app.settings.set("show_bookmarks_bar", not self.app.settings.get("show_bookmarks_bar")), "Ctrl+Shift+B", None, bm).setCheckable(True)

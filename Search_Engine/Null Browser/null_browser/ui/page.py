@@ -35,6 +35,9 @@ class BrowserPage(QWebEnginePage):
                     log.warning("Blocked web page navigation to %s", url.toString())
                     return False
             if is_main_frame:
+                guard = getattr(self.tab, "nav_guard", None)             # installed-app windows keep out-of-scope links out of the app
+                if guard is not None and not guard(url, nav_type):
+                    return False
                 if scheme not in EXTERNAL_OK:
                     # fb:// instagram:// twitter:// reddit:// intent:// ... : sites fire these at load to push their app.
                     # Only a real click may open a prompt; anything else is dropped silently (like Chrome does).
@@ -71,7 +74,7 @@ class WebView(QWebEngineView):
     def __init__(self, tab):
         super().__init__(tab)
         self.tab = tab
-        self.pan_cursor = PanCursorFilter(self)         # Chrome-style cursor for middle-click auto-scroll
+        self.pan_cursor = PanCursorFilter(self)         # fallback: only used while custom_autoscroll is off (see engine/pagescripts.py)
 
     def contextMenuEvent(self, ev):
         try:

@@ -25,7 +25,7 @@ DEFAULTS = {
     # search
     "search_engine": "google",
     "custom_engines": [],
-    "search_suggestions": True,
+    "search_suggestions": False,        # off by default: typed text would be sent to the search engine on every keystroke
     "autostart_null_search": True,
     "null_search_port": 8000,
     # startup
@@ -36,7 +36,7 @@ DEFAULTS = {
     "block_trackers": True,
     "send_dnt": True,
     "adblock_lists": {},               # filter list id -> bool (absent = default for the engine in use), see privacy/filters.py
-    "adblock_auto_update": True,       # refresh the updatable filter lists about once a week
+    "adblock_auto_update": False,      # off by default (it contacts the list hosts); "Update now" in Settings still works
     "adblock_last_update": 0,
     "video_transcode": True,           # play H.264 / AAC video by converting it with ffmpeg when the engine cannot decode it (video/)
     "video_ffmpeg_path": "",           # optional: a specific ffmpeg executable
@@ -44,6 +44,8 @@ DEFAULTS = {
     "adblock_cosmetic": True,          # hide leftover ad containers and run scriptlets (Brave / uBlock style)
     "webrtc_ip_protect": True,         # WebRTC only uses the public network interface (does not expose your LAN address)
     "https_first": True,
+    "share_nothing": True,             # Chromium background traffic, ad-privacy APIs, search suggestions and list updates stay off (engine/flags.py)
+    "google_keep_signed_in": True,     # clearing cookies keeps the Google sign-in (core/accounts.py)
     "clear_on_exit": [],               # subset of: history, cookies, cache, downloads
     "save_site_data": True,            # True (default): cookies, logins and site storage are kept until the user clears them; False = memory only
     # downloads
@@ -56,6 +58,7 @@ DEFAULTS = {
     "memory_saver_minutes": 15,
     "hardware_acceleration": True,
     "smooth_scrolling": True,
+    "custom_autoscroll": True,         # Chrome-style middle-click auto-scroll drawn by the browser (engine/js/autoscroll.js)
     # languages
     "accept_languages": "en-US,en",
     # system / developer
@@ -69,10 +72,11 @@ DEFAULTS = {
     "profile_name": "You",
     "newtab": {},                      # New Tab page customisation (background, shortcuts, layout) - see web/static/newtab.js
     "codec_notice_dismissed": False,   # the "this engine cannot play H.264 video" bar (engine/codecs.py)
+    "pwa_update_hours": 12,            # installed apps re-check their manifest about this often (only those with auto-update on)
     "last_version": "",
 }
 
-RESTART_KEYS = {"hardware_acceleration", "remote_debugging_port", "save_site_data"}
+RESTART_KEYS = {"hardware_acceleration", "remote_debugging_port", "save_site_data", "share_nothing"}
 
 
 class Settings(QObject):

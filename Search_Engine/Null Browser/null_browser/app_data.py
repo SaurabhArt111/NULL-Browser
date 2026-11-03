@@ -25,13 +25,13 @@ def ipc_name():
     return f"NullBrowser-{re.sub(r'[^A-Za-z0-9_-]', '_', user)}-{tag}"
 
 
-def forward_to_running_instance(urls, private):
+def forward_to_running_instance(urls, private, app_id=None):
     """If another Null Browser is already running on this profile, hand it the URLs and return True."""
     sock = QLocalSocket()
     sock.connectToServer(ipc_name())
     if not sock.waitForConnected(400):
         return False
-    sock.write(json.dumps({"urls": urls, "private": private}).encode() + b"\n")
+    sock.write(json.dumps({"urls": urls, "private": private, "app": app_id}).encode() + b"\n")
     sock.waitForBytesWritten(1000)
     sock.disconnectFromServer()
     return True
@@ -75,7 +75,7 @@ class BrowsingDataMixin:
             if self._private_profile:
                 self._private_profile.clearHttpCache()
         if "cookies" in types:
-            self.profile.cookieStore().deleteAllCookies()
+            self.cookies.clear(self.keep_google_login())            # the Google sign-in survives (core/accounts.py); installed apps live in their own profiles
             if self._private_profile:
                 self._private_profile.cookieStore().deleteAllCookies()
             try:

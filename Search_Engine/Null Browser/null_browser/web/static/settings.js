@@ -4,7 +4,8 @@
   const S = D.settings;
   const path = location.pathname.replace(/\/+$/, "") || "/";
   const SECTIONS = [
-    ["you", "You and Null Browser", "eye", "/"], ["privacy", "Privacy and security", "shield", "/privacy"], ["content", "Site settings", "sliders", "/content"],
+    ["you", "You and Null Browser", "user", "/"], ["account", "Google account", "key", "/account"], ["apps", "Apps", "apps", "/apps"], ["vpn", "VPN", "vpn", "/vpn"], null,
+    ["privacy", "Privacy and security", "shield", "/privacy"], ["content", "Site settings", "sliders", "/content"],
     ["performance", "Performance", "gauge", "/performance"], ["appearance", "Appearance", "palette", "/appearance"], ["search", "Search engine", "search", "/search"],
     ["default", "Default browser", "globe", "/default"], ["startup", "On startup", "power", "/startup"], null,
     ["languages", "Languages", "languages", "/languages"], ["downloads", "Downloads", "download", "/downloads"], ["accessibility", "Accessibility", "accessibility", "/accessibility"],
@@ -34,14 +35,103 @@
 
   R.you = () => {
     const ns = D.engine;
+    const A = D.account;
+    const avatar = h("div", { class: "avatar-lg" });
+    if (A.signed_in) { avatar.textContent = (A.name || A.email)[0].toUpperCase(); if (A.avatar) api("account/avatar_data").then(r => { if (r.data) { avatar.textContent = ""; avatar.style.backgroundImage = `url(${r.data})`; } }); } else avatar.innerHTML = icon("user");
     return [h("h1", {}, "You and Null Browser"),
-      card(textRow("Profile name", "Used in the menu and notifications. Null Browser keeps everything local - there is no account or sync.", "profile_name", "You"),
+      card(h("div", { class: "row", style: "min-height:76px" }, avatar, h("div", { class: "grow" }, h("div", { class: "title", style: "font-size:16px" }, A.signed_in ? (A.name || A.email) : "Not signed in"),
+          h("div", { class: "sub" }, A.signed_in ? A.email + " - your Google sign-in stays when you clear browsing data" : "Sign in with Google once. Clearing history or cookies will not sign you out of the browser.")),
+        h("a", { class: "btn " + (A.signed_in ? "" : "primary"), href: "null://settings/account", style: "text-decoration:none" }, A.signed_in ? "Manage" : "Sign in"))),
+      card(textRow("Profile name", "Used in the menu and notifications. Everything stays on this computer: Null Browser has no sync service and shares nothing.", "profile_name", "You"),
         h("div", { class: "row" }, h("div", { class: "grow" }, h("div", { class: "title" }, "Storage"), h("div", { class: "sub" }, D.meta.data_dir)), h("button", { class: "btn", onclick: () => api("app/open_data_dir") }, "Open folder"))),
       h("h2", {}, "Linked search engine"),
       card(link("Null Search", ["running", "external"].includes(ns.state) ? `Online at ${ns.url} - ${(ns.stats && ns.stats.documents) || 0} pages indexed` : (ns.detail || "Not running"), "null://settings/search",
         h("span", { class: "badge " + (["running", "external"].includes(ns.state) ? "ok" : "") }, ns.state))),
       h("h2", {}, "Quick links"),
       card(link("Site settings", "Permissions, cookies, JavaScript, pop-ups and more", "null://settings/content"), link("Clear browsing data", "History, cookies, cache and more", "null://settings/privacy"), link("Developer tools", "F12 opens DevTools docked to the page", "null://settings/system"))];
+  };
+  R.account = () => {
+    const A = D.account;
+    const out = [h("h1", {}, "Google account")];
+    if (!A.signed_in) {
+      out.push(card(actionRow("Sign in with Google", "Opens Google's own sign-in page. Null Browser sees only the account name, address and picture Google shows to the browser (the same ListAccounts call Chrome makes). It never sees your password.", "Sign in", async () => { await api("account/sign_in"); toast("Finish signing in on the Google page, then return here", 5000); }, "primary")));
+    } else {
+      out.push(card(h("div", { class: "row", style: "min-height:72px" }, h("div", { class: "avatar-lg", id: "av" }, (A.name || A.email)[0].toUpperCase()), h("div", { class: "grow" }, h("div", { class: "title", style: "font-size:16px" }, A.name || A.email), h("div", { class: "sub" }, A.email)),
+        h("button", { class: "btn", onclick: async () => { toast("Refreshing…"); await api("account/refresh"); setTimeout(() => location.reload(), 2500); } }, "Refresh"),
+        h("button", { class: "btn danger", onclick: async () => { if (await confirmDialog("Sign out of Google?", "The sign-in cookies are removed from this browser. Other sites stay as they are.", "Sign out", true)) { await api("account/sign_out"); location.reload(); } } }, "Sign out"))));
+      if (A.avatar) api("account/avatar_data").then(r => { const el = $("#av"); if (r.data && el) { el.textContent = ""; el.style.backgroundImage = `url(${r.data})`; } });
+    }
+    out.push(h("h2", {}, "Staying signed in"),
+      card(switchRow("Keep my Google sign-in when I clear browsing data", "On (default): “Clear browsing data”, “Clear on exit” and private-window cleanup remove everything except Google's sign-in cookies. Every other site's cookies are deleted as usual. Turn off and Google is cleared like any other site.", A.keep_on_clear, async v => { await set("google_keep_signed_in", v); D.account.keep_on_clear = v; })),
+      h("h2", {}, "What this is, and is not"),
+      card(h("div", { class: "row", style: "display:block" }, h("div", { class: "sub", style: "line-height:1.55" },
+        "Signing in lets Google sites (Gmail, YouTube, Drive, Search) recognise you in every window. It does not turn on Chrome Sync: bookmarks, history, passwords and extensions are not uploaded anywhere. Null Browser has no sync server, and by design nothing leaves this computer except the pages you open."))));
+    return out;
+  };
+  R.apps = () => {
+    const list = h("div", { class: "card", style: "margin-bottom:14px" });
+    const ago = t => { if (!t) return "never"; const m = Math.round((Date.now() / 1000 - t) / 60); return m < 1 ? "just now" : m < 90 ? m + " min ago" : m < 2880 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " days ago"; };
+    function draw(apps) {
+      list.innerHTML = "";
+      if (!apps.length) list.append(h("div", { class: "empty", style: "padding:28px" }, "No apps yet. Open a site that can be installed and click Install in the address bar, or use Menu > Apps."));
+      apps.forEach(a => {
+        const ic = h("img", { class: "app-ic", src: "/_/pwaicon?id=" + a.id + "&t=" + (a.updated | 0), alt: "" }); ic.onerror = () => { ic.style.visibility = "hidden"; };
+        const note = h("div", { class: "sub" }, `${a.origin} - checked ${ago(a.checked)}`);
+        list.append(h("div", { class: "row", style: "min-height:64px;flex-wrap:wrap" }, ic, h("div", { class: "grow" }, h("div", { class: "title" }, a.name), note),
+          h("label", { class: "badge", style: "cursor:pointer;display:flex;gap:6px;align-items:center;padding:5px 10px", title: "Look for a new version of this app in the background" }, h("input", { type: "checkbox", checked: a.auto_update, onchange: async e => { const r = await api("pwa/set_auto", { id: a.id, on: e.target.checked }); toast("Saved", 1200); } }), "Auto-update"),
+          h("button", { class: "btn", onclick: () => api("pwa/open", { id: a.id }) }, "Open"),
+          h("button", { class: "btn", onclick: async () => { note.textContent = "Checking for a new version…"; const t = (await api("pwa/update", { id: a.id })).token; const tick = async () => { const r = await api("pwa/update_result", { token: t }); if (!r.done) return setTimeout(tick, 700); note.textContent = r.notes[a.id] || "Done"; draw(r.apps); }; tick(); } }, "Update now"),
+          h("button", { class: "btn icon ghost", title: "Add a shortcut", "data-hint": "Desktop and Start menu shortcut", html: icon("link", "sm"), onclick: async () => { const r = await api("pwa/shortcut", { id: a.id }); toast(r.made.length ? "Shortcut created" : "Could not create a shortcut here"); } }),
+          h("button", { class: "btn icon ghost", title: "Clear this app's data", "data-hint": "Cookies, storage and cache of this app only", html: icon("trash", "sm"), onclick: async () => { if (await confirmDialog("Clear data of “" + a.name + "”?", "You will be signed out of this app. The app itself stays installed.", "Clear", true)) { await api("pwa/clear_data", { id: a.id }); toast("App data cleared"); } } }),
+          h("button", { class: "btn icon ghost", title: "Uninstall", "data-hint": "Remove the app and its data", html: icon("x", "sm"), onclick: async () => { if (await confirmDialog("Uninstall “" + a.name + "”?", "The app, its shortcuts and its saved data are removed.", "Uninstall", true)) { const r = await api("pwa/uninstall", { id: a.id }); draw(r.apps); } } })));
+      });
+    }
+    draw(D.apps);
+    return [h("h1", {}, "Apps"),
+      h("p", { class: "muted" }, "Installed sites open in their own window, without tabs or an address bar. Each app keeps its own cookies and storage in a separate folder, so “Clear browsing data” never touches them, and clearing an app never touches the browser."),
+      list,
+      card(actionRow("Check every app for updates", "An app's files and its manifest (name, icon, colours) are fetched again. Apps with Auto-update on are also checked in the background after the browser starts.", "Check all", async () => { toast("Checking…"); const t = (await api("pwa/update", { id: "*" })).token; const tick = async () => { const r = await api("pwa/update_result", { token: t }); if (!r.done) return setTimeout(tick, 800); toast("Apps checked"); draw(r.apps); }; tick(); }),
+        selectRow("Background check interval", "How long to wait between automatic checks", [["6", "6 hours"], ["12", "12 hours"], ["24", "Daily"], ["72", "Every 3 days"], ["168", "Weekly"]], String(S.pwa_update_hours), v => set("pwa_update_hours", +v)))];
+  };
+  R.vpn = () => {
+    const V = D.vpn;
+    const list = h("div", { class: "card", style: "margin-bottom:14px" });
+    const relaunch = async (what) => { if (await confirmDialog(what, "Null Browser restarts to apply this, and your tabs come back.", "Restart now")) api("app/restart", { restore: true }); else banner.style.display = "block"; };
+    function form(srv) {
+      const e = srv || {};
+      const name = h("input", { type: "text", value: e.name || "", placeholder: "My server" }), host = h("input", { type: "text", value: e.host || "", placeholder: "vpn.example.com or 203.0.113.7" }),
+        port = h("input", { type: "text", value: e.port || "", placeholder: "1080" }), user = h("input", { type: "text", value: e.user || "", placeholder: "optional (HTTP / HTTPS only)" }),
+        pass = h("input", { type: "password", value: "", placeholder: e.has_password ? "unchanged" : "optional", autocomplete: "off", style: "width:100%" }),
+        kind = h("select", {}, [["socks5", "SOCKS5"], ["http", "HTTP proxy"], ["https", "HTTPS proxy"]].map(([v, l]) => h("option", { value: v, selected: v === (e.scheme || "socks5") }, l)));
+      const err = h("div", { class: "muted", style: "color:var(--danger);min-height:18px" });
+      const d = h("dialog", {}, h("h3", {}, srv ? "Edit server" : "Add a VPN server"), h("label", {}, "Name"), name, h("label", {}, "Type"), kind, h("label", {}, "Address"), host, h("label", {}, "Port"), port, h("label", {}, "User name"), user, h("label", {}, "Password"), pass, err,
+        h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => d.close() }, "Cancel"), h("button", { class: "btn primary", onclick: async () => {
+          try { const body = { id: e.id, name: name.value.trim(), scheme: kind.value, host: host.value.trim(), port: port.value.trim(), user: user.value.trim() }; if (pass.value) body.password = pass.value; const r = await api("vpn/save", body); D.vpn = r; d.close(); location.reload(); }
+          catch (x) { err.textContent = x.message || String(x); }
+        } }, "Save")));
+      d.addEventListener("close", () => d.remove()); document.body.append(d); d.showModal();
+    }
+    function draw() {
+      list.innerHTML = "";
+      if (!D.vpn.servers.length) list.append(h("div", { class: "empty", style: "padding:28px" }, "No server yet. Add the SOCKS5 or HTTP(S) proxy your VPN provider gives you."));
+      D.vpn.servers.forEach(sv => {
+        const status = h("span", { class: "badge" }, "");
+        list.append(h("div", { class: "row", style: "min-height:60px" }, h("input", { type: "radio", name: "vsrv", checked: sv.id === D.vpn.active, style: "accent-color:var(--accent)", onchange: async () => { const r = await api("vpn/select", { id: sv.id }); D.vpn = r; if (r.restart) relaunch("Switch to this server?"); } }),
+          h("div", { class: "grow" }, h("div", { class: "title" }, sv.name), h("div", { class: "sub" }, `${sv.scheme}://${sv.host}:${sv.port}` + (sv.user ? " - signs in as " + sv.user : ""))), status,
+          h("button", { class: "btn", onclick: async () => { status.className = "badge"; status.textContent = "Testing…"; const t = (await api("vpn/test", { id: sv.id })).token; const tick = async () => { const r = await api("vpn/test_result", { token: t }); if (!r.done) return setTimeout(tick, 500); status.className = "badge " + (r.ok ? "ok" : "err"); status.textContent = r.ok ? `Works - ${r.ms} ms` : r.message; }; tick(); } }, "Test"),
+          h("button", { class: "btn icon ghost", title: "Edit", html: icon("edit", "sm"), onclick: () => form(sv) }),
+          h("button", { class: "btn icon ghost", title: "Delete", html: icon("trash", "sm"), onclick: async () => { if (await confirmDialog("Delete “" + sv.name + "”?", "", "Delete", true)) { D.vpn = await api("vpn/delete", { id: sv.id }); draw(); } } })));
+      });
+      list.append(h("div", { class: "row" }, h("div", { class: "grow muted" }, "Servers are stored only on this computer, in a file only you can read."), h("button", { class: "btn", onclick: () => form(null) }, "Add server")));
+    }
+    draw();
+    return [h("h1", {}, "VPN"),
+      card(switchRow("Send this browser's traffic through the VPN", V.enabled ? "On. Web pages, downloads, WebSockets and DNS lookups go through the server below. If the server stops answering, pages fail to load instead of using your real address." : "Off. Add a server, press Test, then turn this on.", V.enabled, async v => { try { const r = await api("vpn/enable", { on: v }); D.vpn = r; relaunch(v ? "Turn the VPN on?" : "Turn the VPN off?"); } catch (x) { toast(x.message || String(x), 4500); setTimeout(() => location.reload(), 300); } })),
+      h("h2", {}, "Servers"), list,
+      h("h2", {}, "What this VPN is"),
+      card(h("div", { class: "row", style: "display:block" }, h("div", { class: "sub", style: "line-height:1.6" },
+        "It is a tunnel for Null Browser only, not for the whole computer. Null Browser does not run servers: use the endpoint from your VPN provider, a SOCKS5 proxy such as Tor (127.0.0.1:9050), or your own server with ",
+        h("code", {}, "ssh -D 1080 user@host"), ". Chromium cannot log in to SOCKS5, so a server that needs a user name and password must be an HTTP or HTTPS proxy. While the VPN is on, WebRTC may only use the tunnel, so call scripts cannot reveal your address."))) ];
   };
   R.privacy = () => {
     const rules = h("div", { class: "card", style: "margin-bottom:14px" });
@@ -70,6 +160,8 @@
       card(actionRow("Clear browsing data", "Delete history, cookies, cache and more", "Clear data…", () => clearBrowsingDialog())),
       h("h2", {}, "Sign-ins and site data"),
       card(switchRow("Keep cookies and site data", "On (default): you stay signed in to websites, and cookies and site data are kept until you delete them in Clear browsing data. Turn off to keep them in memory only (they vanish when Null Browser closes; needs a relaunch). Null Browser never stores passwords or autofill data itself.", S.save_site_data !== false, v => set("save_site_data", v))),
+      h("h2", {}, "Share nothing"),
+      card(switchRow("Share nothing with anyone", "On (default): the engine makes no background connections of its own: no Google update, safe-browsing, crash-report, telemetry, DNS-prefetch or sync requests, and the browser never contacts a Null server. Sites you open are the only thing that is contacted. Needs a relaunch.", S.share_nothing !== false, v => set("share_nothing", v))),
       h("h2", {}, "Tracking protection"),
       card(switchRow("Block ads", "Built-in ad blocker (works without extensions)", S.adblock, v => set("adblock", v)),
         switchRow("Block trackers", "Analytics and tracking scripts loaded from other sites", S.block_trackers, v => set("block_trackers", v)),
@@ -77,7 +169,7 @@
         switchRow("Play H.264 video (X, Reddit, Instagram, Facebook)", D.video.ready ? "This browser engine cannot decode H.264 / AAC, so Null Browser converts such videos to VP9 / Opus on the fly with ffmpeg (" + D.video.version + "). Uses some CPU while a video plays; reload open pages after changing this." : "Needs ffmpeg: " + D.video.reason + ". Without it, videos on X, Reddit, Instagram and Facebook cannot play in this engine.", S.video_transcode !== false, v => set("video_transcode", v)),
         switchRow("Keep video sites safe from scriptlets", "On (default): on YouTube, X, Reddit, Facebook, Instagram, Twitch and similar sites, the ad blocker still hides ads but skips the scriptlets that rewrite the page's own requests or timers, which are the usual cause of videos stuck on “try again”. Turn off for the full uBlock behaviour everywhere.", S.adblock_video_safe !== false, v => set("adblock_video_safe", v)),
         switchRow("Protect my IP address from WebRTC", "Web pages can only use your public network interface, so video-call scripts cannot read your local network address", S.webrtc_ip_protect !== false, v => set("webrtc_ip_protect", v)),
-        switchRow("Update filter lists weekly", "Downloads fresh EasyList / EasyPrivacy / uBlock lists from their original sites about once a week. Turn off to stay fully offline.", S.adblock_auto_update !== false, v => set("adblock_auto_update", v)),
+        switchRow("Update filter lists weekly", "Off by default so that nothing is fetched behind your back. Turn on to download fresh EasyList / EasyPrivacy / uBlock lists from their original sites about once a week.", !!S.adblock_auto_update, v => set("adblock_auto_update", v)),
         switchRow("Send “Do Not Track” and Global Privacy Control", "Asks sites not to sell or share your data", S.send_dnt, v => set("send_dnt", v)),
         link("Third-party cookies", "Currently: " + D.perm_defaults.cookies_label, "null://settings/content/cookies")),
       h("h2", {}, "Security"),

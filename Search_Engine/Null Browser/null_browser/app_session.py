@@ -19,13 +19,13 @@ def ipc_name():
     return f"NullBrowser-{re.sub(r'[^A-Za-z0-9_-]', '_', user)}-{tag}"
 
 
-def forward_to_running_instance(urls, private):
+def forward_to_running_instance(urls, private, app_id=None):
     """If another Null Browser is already running on this profile, hand it the URLs and return True."""
     sock = QLocalSocket()
     sock.connectToServer(ipc_name())
     if not sock.waitForConnected(400):
         return False
-    sock.write(json.dumps({"urls": urls, "private": private}).encode() + b"\n")
+    sock.write(json.dumps({"urls": urls, "private": private, "app": app_id}).encode() + b"\n")
     sock.waitForBytesWritten(1000)
     sock.disconnectFromServer()
     return True

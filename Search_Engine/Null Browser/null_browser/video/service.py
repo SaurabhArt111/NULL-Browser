@@ -124,7 +124,8 @@ class PageBridge(QObject):
             if not self.svc.allows(url, referer):
                 raise ValueError("blocked by the ad blocker")
             req = urllib.request.Request(url, headers={"User-Agent": ua or "Mozilla/5.0", "Referer": referer or "", "Accept": "*/*"})
-            opener = urllib.request.build_opener(_NoPrivateRedirect)
+            from ..core import vpn_qt
+            opener = vpn_qt.urllib_opener(self.svc.vpn, _NoPrivateRedirect()) if self.svc.vpn is not None else urllib.request.build_opener(_NoPrivateRedirect)
             fd, tmp = tempfile.mkstemp(prefix="null-video-", suffix=".bin")
             size = 0
             with os.fdopen(fd, "wb") as out, opener.open(req, timeout=20) as r:
@@ -170,6 +171,7 @@ class PageBridge(QObject):
                     pass
 
 
+TUNNEL = False                         # VPN on: the proxy resolves names, so never ask the local resolver (that would leak the lookup)
 ALLOW_PRIVATE = False                  # tests only: the self-test serves its media from 127.0.0.1
 
 
@@ -177,6 +179,12 @@ def _public_host(host):
     """False for anything that resolves to this computer or a private network (a page must not use us to probe those)."""
     if ALLOW_PRIVATE:
         return True
+    if TUNNEL:                                      # only literal addresses can be judged here; names are resolved by the proxy
+        try:
+            ip = ipaddress.ip_address(host.strip("[]").split("%")[0])
+        except ValueError:
+            return host.lower() not in ("localhost",) and not host.lower().endswith((".local", ".internal", ".localhost"))
+        return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
     try:
         infos = socket.getaddrinfo(host, None)
     except OSError:
@@ -204,6 +212,7 @@ class VideoService:
         self.exe, self.caps, self.transcoder = "", {}, None
         self.pool = ThreadPoolExecutor(max_workers=max(2, min(3, (os.cpu_count() or 2))), thread_name_prefix="null-video")
         self._js = None
+        self.vpn = None                     # set by the app: the VpnStore, so file fetches use the same tunnel as the pages
         self.adblock = None                 # set by the app: used to apply the ad-block rules to files fetched on a page's behalf
         self.safe = False
         self.refresh()

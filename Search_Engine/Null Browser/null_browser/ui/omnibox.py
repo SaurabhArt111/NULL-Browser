@@ -78,8 +78,9 @@ class Omnibox(QWidget):
         cl = QHBoxLayout(self.chips)
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(2)
-        self.popup_chip, self.zoom_chip, self.shield_chip = QToolButton(), QToolButton(), QToolButton()
-        for b, (t, hint) in ((self.popup_chip, ("Pop-ups blocked", "This page tried to open pop-up windows. Click to allow them")),
+        self.popup_chip, self.zoom_chip, self.shield_chip, self.install_chip = QToolButton(), QToolButton(), QToolButton(), QToolButton()
+        for b, (t, hint) in ((self.install_chip, ("Install as app", "Open this site in its own window, like an app. Its data stays separate from the browser")),
+                             (self.popup_chip, ("Pop-ups blocked", "This page tried to open pop-up windows. Click to allow them")),
                              (self.zoom_chip, ("Zoom level", "Click to zoom in, zoom out or reset")),
                              (self.shield_chip, ("Ads and trackers blocked", "Click to see details or allow ads on this site"))):
             b.setObjectName("chip")
@@ -103,7 +104,7 @@ class Omnibox(QWidget):
         self.restyle()
 
     def restyle(self):
-        for b in (self.popup_chip, self.zoom_chip, self.shield_chip, self.sec):
+        for b in (self.popup_chip, self.zoom_chip, self.shield_chip, self.install_chip, self.sec):
             b.setIconSize(QSize(15, 15))
         self.popup_chip.setIcon(self.win.icon("popup", size=16))
         self.zoom_chip.setIcon(self.win.icon("zoom", size=16))

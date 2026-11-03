@@ -95,7 +95,7 @@
         h("h1", {}, "You're InPrivate"),
         h("p", {}, "Null Browser won't save your history, cookies or site data from this window. Downloads and bookmarks you create are kept. Your activity may still be visible to the sites you visit, your employer or school, and your internet provider.")));
     } else if (N.logo) {
-      main.append(h("div", { class: "nt-brand" }, h("div", { class: "logo" }, "N"), h("div", { class: "word" }, N.logo_text || "Null")));
+      main.append(h("div", { class: "nt-brand" }, h("img", { class: "logo", src: "/_/icon.svg", alt: "" }), h("div", { class: "word" }, N.logo_text || "Null")));
     }
     if (N.search) {
       const box = h("div", { class: "nt-search " + N.search_style }, h("span", { html: icon("search") }), input);

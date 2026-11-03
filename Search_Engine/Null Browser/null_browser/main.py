@@ -10,6 +10,8 @@ def _parse(argv):
     ap.add_argument("urls", nargs="*", help="URLs or files to open")
     ap.add_argument("--private", "--incognito", "--inprivate", action="store_true", help="open an InPrivate window")
     ap.add_argument("--safe-mode", action="store_true", help="start with ad blocking, API gate and session restore off")
+    ap.add_argument("--restore", action="store_true", help=argparse.SUPPRESS)           # restart: bring the previous tabs back
+    ap.add_argument("--app", metavar="ID", help="open an installed web app (PWA) by id")
     ap.add_argument("--debug", action="store_true", help="verbose logging")
     ap.add_argument("--data-dir", help="use a different profile folder")
     ap.add_argument("--selftest", metavar="OUTDIR", help="run the headless end-to-end self-test and exit")
@@ -136,7 +138,7 @@ def main(argv=None):
     from .app import BrowserApp, forward_to_running_instance
 
     urls = [u if "://" in u or u.startswith(("about:", "data:")) else _to_url(u) for u in args.urls]
-    if not args.new_instance and not args.safe_mode and not args.selftest and forward_to_running_instance(urls, args.private):
+    if not args.new_instance and not args.safe_mode and not args.selftest and forward_to_running_instance(urls, args.private, args.app):
         log.info("Handed over to the running instance")
         return 0
 
@@ -153,7 +155,7 @@ def main(argv=None):
         log.info("Creating the browser (safe mode: %s)", safe)
         app = BrowserApp(qapp, safe_mode=safe)
         log.info("Browser object ready; opening windows")
-        app.start(urls, private=args.private)
+        app.start(urls, private=args.private, restore=args.restore, app_id=args.app)
         log.info("Windows opened: %d", len(app.windows))
         if enhance.AUTO_DISABLED and app.windows:
             app.windows[0].add_infobar("The last start didn't finish, so native snap / resize and the window animations are off for this start only.",

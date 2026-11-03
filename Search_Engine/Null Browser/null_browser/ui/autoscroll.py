@@ -147,8 +147,8 @@ class PanCursorFilter(QObject):
         super().__init__(view)
         self.view = view
         from . import enhance
-        if not enhance.ENABLED:
-            return                                      # inert: no filters installed
+        if not enhance.ENABLED or view.tab.app.settings.get("custom_autoscroll"):
+            return                                      # inert: the in-page auto-scroll (engine/js/autoscroll.js) owns the cursor
         self._armed = False
         self._origin = None
         self._axes = "v"
@@ -161,7 +161,7 @@ class PanCursorFilter(QObject):
     def attach(self):
         """(Re)hook the view's render widgets; Qt WebEngine creates / replaces them lazily."""
         from . import enhance
-        if not enhance.ENABLED:
+        if not enhance.ENABLED or not hasattr(self, "_watched"):
             return
         widgets = list(self.view.findChildren(QWidget))
         if self.view.focusProxy() is not None:

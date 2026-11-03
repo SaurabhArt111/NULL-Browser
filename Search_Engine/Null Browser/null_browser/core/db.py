@@ -182,6 +182,22 @@ class Database:
                   folder if folder is not None else row["folder"], bid))
         return True
 
+    def move_bookmark(self, bid, folder, index):
+        """Put a bookmark at `index` of `folder` (re-numbers the folder). Used by drag-and-drop on the bookmarks bar."""
+        if not self.one("SELECT id FROM bookmarks WHERE id=?", (bid,)):
+            return False
+        ids = [r["id"] for r in self.all("SELECT id FROM bookmarks WHERE folder=? AND id<>? ORDER BY position, id", (folder, bid))]
+        ids.insert(max(0, min(int(index), len(ids))), bid)
+        for pos, i in enumerate(ids):
+            if i == bid:
+                self.run("UPDATE bookmarks SET folder=?, position=? WHERE id=?", (folder, pos, i))
+            else:
+                self.run("UPDATE bookmarks SET position=? WHERE id=?", (pos, i))
+        return True
+
+    def rename_folder(self, old, new):
+        self.run("UPDATE bookmarks SET folder=? WHERE folder=?", (new, old))
+
     def delete_bookmark(self, bid):
         self.run("DELETE FROM bookmarks WHERE id=?", (bid,))
 

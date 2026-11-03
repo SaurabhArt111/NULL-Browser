@@ -96,6 +96,7 @@ def settings_get(app, p, private):
     return {
         "settings": app.settings.all(), "restart_keys": sorted(RESTART_KEYS), "catalog": app.perms.catalog_with_state(),
         "video": app.video.info(), "engines": app.search.engines(), "engine": app.engine.info(), "perm_defaults": {"cookies_label": label},
+        "account": app.account_info(), "vpn": app.vpn.public(), "apps": app.pwa.public(),
         "meta": {"data_dir": paths.data_dir(), "default_download_dir": paths.downloads_dir(), "versions": app.versions(),
                  "bookmark_count": len(app.db.bookmarks())},
     }
@@ -459,8 +460,190 @@ def logs_get(app, p, private):
 @route("app/restart")
 def app_restart(app, p, private):
     safe = bool(p.get("safe"))
-    QTimer.singleShot(150, lambda: app.restart(safe=safe))
+    restore = bool(p.get("restore"))
+    QTimer.singleShot(150, lambda: app.restart(safe=safe, restore=restore))
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ Google account (app_accounts.py)
+@route("account/state")
+def account_state(app, p, private):
+    return app.account_info()
+
+
+@route("account/sign_in")
+def account_sign_in(app, p, private):
+    QTimer.singleShot(0, app.begin_sign_in)
+    return {"ok": True}
+
+
+@route("account/sign_out")
+def account_sign_out(app, p, private):
+    app.sign_out()
+    return app.account_info()
+
+
+@route("account/refresh")
+def account_refresh(app, p, private):
+    app.refresh_identity()
+    return {"ok": True}
+
+
+@route("account/avatar_data")
+def account_avatar(app, p, private):
+    try:
+        with open(app.avatar_path(), "rb") as f:
+            return {"data": "data:image/png;base64," + base64.b64encode(f.read()).decode()}
+    except OSError:
+        return {"data": ""}
+
+
+# ------------------------------------------------------------------ built-in VPN (core/vpn.py)
+@route("vpn/state")
+def vpn_state(app, p, private):
+    return app.vpn.public()
+
+
+@route("vpn/save")
+def vpn_save(app, p, private):
+    from ..core.vpn import VpnError
+    try:
+        sid = app.vpn.upsert(p)
+    except VpnError as exc:
+        raise ApiError(str(exc))
+    return {"id": sid, **app.vpn.public()}
+
+
+@route("vpn/delete")
+def vpn_delete(app, p, private):
+    _need(p, "id")
+    app.vpn.delete(str(p["id"]))
+    return app.vpn.public()
+
+
+@route("vpn/select")
+def vpn_select(app, p, private):
+    from ..core.vpn import VpnError
+    _need(p, "id")
+    try:
+        app.vpn.set_active(str(p["id"]))
+    except VpnError as exc:
+        raise ApiError(str(exc))
+    return {**app.vpn.public(), "restart": bool(app.vpn.state["enabled"])}
+
+
+@route("vpn/enable")
+def vpn_enable(app, p, private):
+    """Turning the VPN on / off needs a restart (Chromium reads its proxy once, at start-up); the page offers it."""
+    from ..core.vpn import VpnError
+    try:
+        app.vpn.set_enabled(bool(p.get("on")))
+    except VpnError as exc:
+        raise ApiError(str(exc))
+    return {**app.vpn.public(), "restart": True}
+
+
+_VPN_TESTS = {}                              # token -> result dict, filled by a worker thread (a test can take seconds: never on the UI thread)
+
+
+@route("vpn/test")
+def vpn_test(app, p, private):
+    import secrets
+    import threading
+    from ..core.vpn import test_server
+    s = app.vpn.get(str(p.get("id", "")))
+    if s is None:
+        raise ApiError("Unknown server")
+    token = secrets.token_hex(6)
+    _VPN_TESTS[token] = None
+    for k in list(_VPN_TESTS)[:-20]:
+        _VPN_TESTS.pop(k, None)
+    threading.Thread(target=lambda: _VPN_TESTS.__setitem__(token, test_server(dict(s))), daemon=True).start()
+    return {"token": token}
+
+
+@route("vpn/test_result")
+def vpn_test_result(app, p, private):
+    r = _VPN_TESTS.get(str(p.get("token", "")))
+    return {"done": r is not None, **(r or {})}
+
+
+# ------------------------------------------------------------------ installed web apps (app_pwa.py)
+def _app_id(app, p):
+    aid = str(p.get("id") or "")
+    if app.pwa.get(aid) is None:
+        raise ApiError("Unknown app.")
+    return aid
+
+
+@route("pwa/list")
+def pwa_list(app, p, private):
+    return {"apps": app.pwa.public()}
+
+
+@route("pwa/open")
+def pwa_open(app, p, private):
+    app.open_pwa(_app_id(app, p))
+    return {"ok": True}
+
+
+@route("pwa/uninstall")
+def pwa_uninstall(app, p, private):
+    app.uninstall_pwa(_app_id(app, p), delete_data=bool(p.get("delete_data", True)))
+    return {"apps": app.pwa.public()}
+
+
+@route("pwa/set_auto")
+def pwa_set_auto(app, p, private):
+    rec = app.pwa.get(_app_id(app, p))
+    rec["auto_update"] = bool(p.get("on"))
+    app.pwa.save()
+    return {"apps": app.pwa.public()}
+
+
+@route("pwa/shortcut")
+def pwa_shortcut(app, p, private):
+    made = app.create_shortcuts(_app_id(app, p), desktop=bool(p.get("desktop", True)), menu=bool(p.get("menu", True)))
+    return {"made": made, "apps": app.pwa.public()}
+
+
+@route("pwa/clear_data")
+def pwa_clear(app, p, private):
+    app.clear_pwa_data(_app_id(app, p))
+    return {"ok": True}
+
+
+_PWA_UPDATES = {}
+
+
+@route("pwa/update")
+def pwa_update(app, p, private):
+    """Check one app (or all with id "*") for a new version in the background; poll pwa/update_result with the returned token."""
+    import secrets
+    ids = [a["id"] for a in app.pwa.public()] if p.get("id") == "*" else [_app_id(app, p)]
+    token = secrets.token_hex(6)
+    _PWA_UPDATES[token] = {"done": 0, "total": len(ids), "notes": {}}
+    for aid in ids:
+        def cb(note, aid=aid):
+            st = _PWA_UPDATES.get(token)
+            if st is not None:
+                st["done"] += 1
+                st["notes"][aid] = note
+        app.pwa_check_update_headless(aid, cb)
+    if not ids:
+        _PWA_UPDATES[token]["done"] = 0
+    return {"token": token}
+
+
+@route("pwa/update_result")
+def pwa_update_result(app, p, private):
+    st = _PWA_UPDATES.get(str(p.get("token") or ""))
+    if st is None:
+        raise ApiError("Unknown check.")
+    out = {"done": st["done"] >= st["total"], "notes": dict(st["notes"]), "apps": app.pwa.public()}
+    if out["done"]:
+        _PWA_UPDATES.pop(str(p.get("token")), None)
+    return out
 
 
 @route("app/open_data_dir")

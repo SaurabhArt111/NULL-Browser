@@ -11,7 +11,9 @@ from PyQt6.QtWebEngineCore import (QWebEnginePage, QWebEngineSettings, qWebEngin
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 
 from . import constants as C
+from .app_accounts import AccountsMixin
 from .app_data import BrowsingDataMixin
+from .app_pwa import PwaMixin
 from .app_instances import SingleInstanceMixin
 from .app_policies import PoliciesMixin
 from .app_profiles import ProfilesMixin
@@ -25,9 +27,10 @@ from .core.downloads import DownloadManager
 from .core.engine_service import EngineService
 from .core.notify import Notifier
 from .core.permissions import PermissionManager
-from .engine import codecs
+from .engine import codecs, pagescripts
 from .core.search import SearchManager
 from .core.settings import Settings
+from .core.vpn import VpnStore
 from .ui import icons, theme
 from .video.service import VideoService
 
@@ -46,21 +49,23 @@ def ipc_name():
     return f"NullBrowser-{re.sub(r'[^A-Za-z0-9_-]', '_', user)}-{tag}"
 
 
-def forward_to_running_instance(urls, private):
+def forward_to_running_instance(urls, private, app_id=None):
     """If another Null Browser is already running on this profile, hand it the URLs and return True."""
     sock = QLocalSocket()
     sock.connectToServer(ipc_name())
     if not sock.waitForConnected(400):
         return False
-    sock.write(json.dumps({"urls": urls, "private": private}).encode() + b"\n")
+    sock.write(json.dumps({"urls": urls, "private": private, "app": app_id}).encode() + b"\n")
     sock.waitForBytesWritten(1000)
     sock.disconnectFromServer()
     return True
 
 
-class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin, BrowsingDataMixin, QObject):
+class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin, BrowsingDataMixin, AccountsMixin, PwaMixin, QObject):
     """Application object: owns the shared services and the windows. Profiles, session, policies, IPC and data clearing are mixins (app_*.py)."""
     themeChanged = pyqtSignal()
+    accountChanged = pyqtSignal()
+    pwaChanged = pyqtSignal()
 
     def __init__(self, qapp, safe_mode=False, start_private=False):
         super().__init__(qapp)
@@ -75,6 +80,8 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
 
         self._apply_pending_clear()
         self.settings = Settings()
+        self.vpn = VpnStore(paths.data_dir())
+        self.init_pwa()
         self.db = Database()
         self.perms = PermissionManager(self.db, self.settings)
         self.cookie_policy = CookiePolicy(self.perms)
@@ -82,6 +89,11 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         self.adblock = AdBlocker(self.settings, self.perms, self)
         self.video = VideoService(self.settings)
         self.video.adblock = self.adblock
+        self.video.vpn = self.vpn
+        from .core import vpn_qt
+        from .video import service as _video_service
+        vpn_qt.apply(self.vpn)                                  # Qt's own sockets use the tunnel too (Chromium gets it from flags.py)
+        _video_service.TUNNEL = self.vpn.enabled
         self.video.safe = safe_mode
         self.adblock.safe_mode = safe_mode
         self.adblock.refresh()
@@ -97,6 +109,7 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         self.palette_colors = theme.resolve(self.settings.get("theme"))
 
         self.profile = self._make_profile(private=False)
+        self.init_accounts()
         self.perms.on_change = self._permissions_changed
         self.settings.changed.connect(self.on_setting_changed)
         crash.bus.too_many.connect(self._error_storm)
@@ -231,9 +244,15 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         return ipc_name()
 
 
-    def start(self, urls, private=False):
+    def start(self, urls, private=False, restore=False, app_id=None):
         """Open the first window(s) according to startup settings."""
         self.listen_for_instances()
+        self.pwa_start()
+        if app_id and self.pwa.get(app_id):                       # launched from an app shortcut: only the app opens, no browser window
+            self.qapp.setQuitOnLastWindowClosed(True)
+            self.open_pwa(app_id)
+            QTimer.singleShot(6000, crash.mark_startup_ok)
+            return
         if not self.safe:
             self.adblock.start()                                    # builds / loads the filter engine on a worker thread
             QTimer.singleShot(25_000, self.adblock.filters.maybe_auto_update)
@@ -245,7 +264,7 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
             self.new_window(private=private, url=urls[0] if urls else None)
             for u in urls[1:]:
                 self.windows[-1].add_tab(u)
-        elif mode == "continue" and not self.safe:
+        elif (mode == "continue" or restore) and not self.safe:
             restored = self.restore_session()
         elif mode == "urls" and self.settings.get("startup_urls"):
             su = self.settings.get("startup_urls")
@@ -317,6 +336,10 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
             if webrtc is not None:
                 for t in self.all_tabs():
                     t.page.settings().setAttribute(webrtc, bool(v))
+        elif key == "custom_autoscroll":
+            for p in (self.profile, self._private_profile):
+                if p is not None:
+                    pagescripts.install(p, self.settings)
         elif key in ("font_size", "min_font_size", "web_dark_mode", "smooth_scrolling"):
             for t in self.all_tabs():
                 self.apply_page_settings(t.page)
@@ -379,12 +402,24 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
             w.offer_safe_mode()
 
     # ------------------------------------------------------------------ lifecycle
-    def restart(self, safe=False):
+    def restart(self, safe=False, restore=False):
         """Quit, then start a fresh copy. The new copy is launched at the very end of shutdown() (after the search engine
         child process and the profile have been closed) and waits for this process id to disappear, so the two never overlap."""
-        self._restart_args = ["--safe-mode"] if safe else []
+        self._restart_args = (["--safe-mode"] if safe else []) + (["--restore"] if restore else [])
         self._shutting_down = True
         self.qapp.quit()
+
+    def vpn_set_enabled(self, on):
+        """Switch the built-in VPN on or off. Chromium reads its proxy only at start-up, so the browser restarts and brings the tabs back."""
+        from .core.vpn import VpnError
+        try:
+            self.vpn.set_enabled(bool(on))
+        except VpnError as exc:
+            w = self.active_window()
+            if w:
+                w.show_toast(str(exc))
+            return
+        self.restart(restore=True)
 
     def quit(self):
         self.qapp.setQuitOnLastWindowClosed(True)

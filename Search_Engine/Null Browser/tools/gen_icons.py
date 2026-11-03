@@ -1,0 +1,165 @@
+"""Null Browser icon set - original artwork, drawn for this project (no third-party icon geometry).
+
+Grid: 24 x 24, stroke icons (1.9 px round caps / joins, set by the renderer), the few filled parts use fill="currentColor".
+Run:  python tools/gen_icons.py      -> writes null_browser/ui/icon_paths.py and null_browser/web/static/icons.js
+"""
+import json
+import math
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+F = 'fill="currentColor" stroke="none"'
+
+
+def gear(cx=12, cy=12, teeth=8, r_out=9.0, r_in=7.0, hole=2.9):
+    pts = []
+    n = teeth * 4
+    for i in range(n):
+        a = 2 * math.pi * i / n - math.pi / n
+        r = r_out if (i % 4) in (1, 2) else r_in
+        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    d = "M" + " L".join(f"{x:.2f} {y:.2f}" for x, y in pts) + "Z"
+    return f'<path d="{d}"/><circle cx="{cx}" cy="{cy}" r="{hole}"/>'
+
+
+def poly_star(cx=12, cy=12.4, ro=8.4, ri=3.6):
+    pts = []
+    for i in range(10):
+        a = -math.pi / 2 + i * math.pi / 5
+        r = ro if i % 2 == 0 else ri
+        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return "M" + " L".join(f"{x:.2f} {y:.2f}" for x, y in pts) + "Z"
+
+
+STAR = poly_star()
+
+ICONS = {
+    # navigation
+    "back": '<path d="M19.5 12h-14"/><path d="m11 5.5-6.5 6.5 6.5 6.5"/>',
+    "forward": '<path d="M4.5 12h14"/><path d="m13 5.5 6.5 6.5-6.5 6.5"/>',
+    "reload": '<path d="M18.6 8.2A7.2 7.2 0 1 0 19.2 13"/><path d="M19.4 4v4.6h-4.6"/>',
+    "refresh": '<path d="M5.2 10.6a7 7 0 0 1 12.2-3l1.6 1.8"/><path d="M19 4.5v4.6h-4.6"/><path d="M18.8 13.4a7 7 0 0 1-12.2 3L5 14.6"/><path d="M5 19.5v-4.6h4.6"/>',
+    "stop": '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
+    "home": '<path d="m3.8 11.4 8.2-7 8.2 7"/><path d="M6 10v8.6a1.4 1.4 0 0 0 1.4 1.4h3.1v-4.6h3v4.6h3.1a1.4 1.4 0 0 0 1.4-1.4V10"/>',
+    "star": f'<path d="{STAR}"/>',
+    "star_fill": f'<path d="{STAR}" fill="currentColor"/>',
+    "bookmark": '<path d="M7.2 4.5h9.6a1 1 0 0 1 1 1V20L12 15.6 6.2 20V5.5a1 1 0 0 1 1-1z"/>',
+    "lock": '<rect x="5.5" y="10.6" width="13" height="9.4" rx="2.3"/><path d="M8.6 10.6V8a3.4 3.4 0 0 1 6.8 0v2.6"/><circle cx="12" cy="15.3" r="1.1" ' + F + '/>',
+    "unlock": '<rect x="5.5" y="10.6" width="13" height="9.4" rx="2.3"/><path d="M8.6 10.6V8a3.4 3.4 0 0 1 6.6-1.2"/><circle cx="12" cy="15.3" r="1.1" ' + F + '/>',
+    "alert": '<path d="M12 4.2 3.6 18.8a.9.9 0 0 0 .8 1.4h15.2a.9.9 0 0 0 .8-1.4z"/><path d="M12 9.8v4.2"/><circle cx="12" cy="16.9" r=".9" ' + F + '/>',
+    "info": '<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.2"/><circle cx="12" cy="7.9" r=".95" ' + F + '/>',
+    "more": '<circle cx="12" cy="5.6" r="1.7" ' + F + '/><circle cx="12" cy="12" r="1.7" ' + F + '/><circle cx="12" cy="18.4" r="1.7" ' + F + '/>',
+    "plus": '<path d="M12 5.2v13.6M5.2 12h13.6"/>',
+    "minus": '<path d="M5.2 12h13.6"/>',
+    "close": '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
+    "x": '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
+    "x_circle": '<circle cx="12" cy="12" r="8.6"/><path d="m9 9 6 6M15 9l-6 6"/>',
+    "check": '<path d="m5.4 12.8 4.4 4.4 8.8-9.4"/>',
+    "check_circle": '<circle cx="12" cy="12" r="8.6"/><path d="m8.2 12.4 2.7 2.7 5-5.4"/>',
+    "download": '<path d="M12 4.4v10.2"/><path d="m7.6 10.4 4.4 4.4 4.4-4.4"/><path d="M5 19.6h14"/>',
+    "upload": '<path d="M12 15.6V5.4"/><path d="m7.6 9.6 4.4-4.4 4.4 4.4"/><path d="M5 19.6h14"/>',
+    "shield": '<path d="M12 3.6 5.2 6.2v5.4c0 4.3 2.9 7.5 6.8 8.8 3.9-1.3 6.8-4.5 6.8-8.8V6.2z"/>',
+    "shield_off": '<path d="M9.6 4.6 12 3.6l6.8 2.6v5.4c0 1.6-.4 3-1.1 4.2"/><path d="M5.2 8.2v3.4c0 4.3 2.9 7.5 6.8 8.8 1.3-.4 2.5-1.1 3.5-2"/><path d="m4 4 16 16"/>',
+    "search": '<circle cx="10.6" cy="10.6" r="6.1"/><path d="m15.2 15.2 4.8 4.8"/>',
+    "settings": gear(),
+    "history": '<path d="M4.4 12a7.6 7.6 0 1 0 2.3-5.4L4.4 9"/><path d="M4.4 4.6V9h4.4"/><path d="M12 8v4.3l2.9 1.8"/>',
+    "clock": '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.2 2"/>',
+    "folder": '<path d="M3.8 7.6A1.6 1.6 0 0 1 5.4 6h3.9l2 2.3h7.3a1.6 1.6 0 0 1 1.6 1.6v7.5a1.6 1.6 0 0 1-1.6 1.6H5.4a1.6 1.6 0 0 1-1.6-1.6z"/>',
+    "globe": '<circle cx="12" cy="12" r="8.6"/><ellipse cx="12" cy="12" rx="3.7" ry="8.6"/><path d="M3.8 9.4h16.4M3.8 14.6h16.4"/>',
+    "volume": '<path d="M4.6 9.8h3l4.4-3.6v11.6l-4.4-3.6h-3z"/><path d="M15.4 9.4a3.7 3.7 0 0 1 0 5.2"/><path d="M17.9 6.9a7.2 7.2 0 0 1 0 10.2"/>',
+    "mute": '<path d="M4.6 9.8h3l4.4-3.6v11.6l-4.4-3.6h-3z"/><path d="m15.4 9.6 4.6 4.8M20 9.6l-4.6 4.8"/>',
+    "copy": '<rect x="8.6" y="8.6" width="11" height="11" rx="2.2"/><path d="M15.4 8.6V6.8a2 2 0 0 0-2-2H6.8a2 2 0 0 0-2 2v6.6a2 2 0 0 0 2 2h1.8"/>',
+    "chevron": '<path d="m9.4 5.8 6.2 6.2-6.2 6.2"/>',
+    "up": '<path d="m5.8 14.6 6.2-6.2 6.2 6.2"/>',
+    "down": '<path d="m5.8 9.4 6.2 6.2 6.2-6.2"/>',
+    "arrow_up": '<path d="M12 19.4V5.2"/><path d="m6.2 10.8 5.8-5.8 5.8 5.8"/>',
+    "arrow_down": '<path d="M12 4.6v14.2"/><path d="m6.2 13.2 5.8 5.8 5.8-5.8"/>',
+    "menu": '<path d="M4.6 7h14.8M4.6 12h14.8M4.6 17h14.8"/>',
+    "grid": '<rect x="4.4" y="4.4" width="6.2" height="6.2" rx="1.6"/><rect x="13.4" y="4.4" width="6.2" height="6.2" rx="1.6"/><rect x="4.4" y="13.4" width="6.2" height="6.2" rx="1.6"/><rect x="13.4" y="13.4" width="6.2" height="6.2" rx="1.6"/>',
+    "apps": '<rect x="4.4" y="4.4" width="6.2" height="6.2" rx="1.6"/><rect x="4.4" y="13.4" width="6.2" height="6.2" rx="1.6"/><rect x="13.4" y="13.4" width="6.2" height="6.2" rx="1.6"/><path d="M16.5 3.8v6.4M13.3 7h6.4"/>',
+    "list": '<path d="M9.4 7h10.2M9.4 12h10.2M9.4 17h10.2"/><circle cx="5.2" cy="7" r=".9" ' + F + '/><circle cx="5.2" cy="12" r=".9" ' + F + '/><circle cx="5.2" cy="17" r=".9" ' + F + '/>',
+    "layout": '<rect x="3.8" y="4.8" width="16.4" height="14.4" rx="2.4"/><path d="M9.6 4.8v14.4"/>',
+    "link": '<path d="M10.2 13.8a3.6 3.6 0 0 0 5.1 0l3-3a3.6 3.6 0 0 0-5.1-5.1l-1 1"/><path d="M13.8 10.2a3.6 3.6 0 0 0-5.1 0l-3 3a3.6 3.6 0 0 0 5.1 5.1l1-1"/>',
+    "external": '<path d="M13.6 4.6h5.8v5.8"/><path d="M19.4 4.6 11 13"/><path d="M17.4 14v3.4a2.2 2.2 0 0 1-2.2 2.2H6.6a2.2 2.2 0 0 1-2.2-2.2V8.8a2.2 2.2 0 0 1 2.2-2.2H10"/>',
+    "external_window": '<rect x="3.8" y="6.2" width="12.4" height="12.4" rx="2.4"/><path d="M13 3.8h7.2V11"/><path d="m20.2 3.8-6 6"/>',
+    "eye": '<path d="M2.8 12S6.2 5.8 12 5.8 21.2 12 21.2 12 17.8 18.2 12 18.2 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="3"/>',
+    "eye_off": '<path d="M9.2 6.2a8.4 8.4 0 0 1 2.8-.4C17.8 5.8 21.2 12 21.2 12a15 15 0 0 1-2.7 3.5"/><path d="M6.1 8.2C4 9.8 2.8 12 2.8 12s3.4 6.2 9.2 6.2c1.3 0 2.5-.3 3.5-.8"/><path d="M10.1 10.1a3 3 0 0 0 3.8 3.8"/><path d="m4 4 16 16"/>',
+    "file": '<path d="M7 3.8h6.4L18.6 9v10a1.2 1.2 0 0 1-1.2 1.2H7A1.2 1.2 0 0 1 5.8 19V5A1.2 1.2 0 0 1 7 3.8z"/><path d="M13.2 3.8V9h5.4"/>',
+    "fullscreen": '<path d="M4.6 9V5.6a1 1 0 0 1 1-1H9M15 4.6h3.4a1 1 0 0 1 1 1V9M19.4 15v3.4a1 1 0 0 1-1 1H15M9 19.4H5.6a1 1 0 0 1-1-1V15"/>',
+    "gauge": '<path d="M4.6 17.6a8.6 8.6 0 1 1 14.8 0"/><path d="m12 13.4 3.6-4.4"/><circle cx="12" cy="13.6" r="1.3" ' + F + '/>',
+    "image": '<rect x="4" y="5" width="16" height="14" rx="2.4"/><circle cx="9.2" cy="10" r="1.5"/><path d="m4.6 17 4.2-4 3.4 3 2.8-2.4L19.4 16"/>',
+    "languages": '<path d="M4.4 6.4h8.4M8.6 4.6v1.8M6 6.4c.4 3 2.6 5.2 5.4 6.2M11.2 6.4c-.5 3-2.8 5.6-6.4 6.8"/><path d="m11.8 19.4 3.8-9 3.8 9M13 16.6h5.2"/>',
+    "maximize": '<rect x="5.2" y="5.2" width="13.6" height="13.6" rx="1.6"/>',
+    "minimize": '<path d="M5.2 12h13.6"/>',
+    "restore": '<rect x="4.6" y="8.6" width="10.8" height="10.8" rx="1.6"/><path d="M8.6 8.6V6.2a1.6 1.6 0 0 1 1.6-1.6h7.2a1.6 1.6 0 0 1 1.6 1.6v7.2a1.6 1.6 0 0 1-1.6 1.6h-2"/>',
+    "moon": '<path d="M19.6 14.4A8 8 0 0 1 9.6 4.4a8 8 0 1 0 10 10z"/>',
+    "sun": '<circle cx="12" cy="12" r="3.8"/><path d="M12 3.6v2M12 18.4v2M3.6 12h2M18.4 12h2M6.1 6.1l1.4 1.4M16.5 16.5l1.4 1.4M17.9 6.1l-1.4 1.4M7.5 16.5l-1.4 1.4"/>',
+    "bell": '<path d="M6.2 16.8V11a5.8 5.8 0 0 1 11.6 0v5.8l1.4 1.6H4.8z"/><path d="M10.2 20.6a2 2 0 0 0 3.6 0"/>',
+    "bug": '<rect x="8" y="8.2" width="8" height="10.4" rx="4"/><path d="M9.6 8.2a2.4 2.4 0 0 1 4.8 0M4.6 12.6H8M16 12.6h3.4M5.6 18l2.6-1.8M18.4 18l-2.6-1.8M5.6 7.2l2.6 1.8M18.4 7.2 15.8 9"/>',
+    "code": '<path d="m8.6 7.4-4.8 4.6 4.8 4.6M15.4 7.4l4.8 4.6-4.8 4.6"/><path d="m13.2 5.6-2.4 12.8"/>',
+    "cpu": '<rect x="7" y="7" width="10" height="10" rx="2"/><rect x="10.2" y="10.2" width="3.6" height="3.6" rx=".8"/><path d="M10 3.8v3.2M14 3.8v3.2M10 17v3.2M14 17v3.2M3.8 10h3.2M3.8 14h3.2M17 10h3.2M17 14h3.2"/>',
+    "edit": '<path d="m14.6 5.6 3.8 3.8L8.8 19H5v-3.8z"/><path d="m13 7.2 3.8 3.8"/>',
+    "move": '<path d="M12 3.8v16.4M3.8 12h16.4"/><path d="m9.2 6.6 2.8-2.8 2.8 2.8M9.2 17.4l2.8 2.8 2.8-2.8M6.6 9.2 3.8 12l2.8 2.8M17.4 9.2l2.8 2.8-2.8 2.8"/>',
+    "null": '<circle cx="12" cy="12" r="7.6"/><path d="m6.2 18.4 11.6-12.8"/>',
+    "palette": '<path d="M12 3.8a8.2 8.2 0 1 0 0 16.4c1.3 0 1.9-.9 1.9-1.8 0-1.3-1.1-1.6-1.1-2.7 0-1 .8-1.6 1.8-1.6h2.1a3.2 3.2 0 0 0 3.3-3.3C20 7.2 16.5 3.8 12 3.8z"/><circle cx="8" cy="11.4" r="1.1" ' + F + '/><circle cx="11.2" cy="7.8" r="1.1" ' + F + '/><circle cx="15.8" cy="8.6" r="1.1" ' + F + '/>',
+    "pause": '<rect x="6.4" y="5.2" width="3.8" height="13.6" rx="1.2"/><rect x="13.8" y="5.2" width="3.8" height="13.6" rx="1.2"/>',
+    "play": '<path d="M8 5.6v12.8L18.6 12z" fill="currentColor"/>',
+    "pin": '<path d="M9 4.4h6l-1 5 3.2 3.2H6.8L10 9.4z"/><path d="M12 12.6v7"/>',
+    "popup": '<rect x="3.8" y="6.6" width="13.4" height="12.6" rx="2.4"/><path d="M8 4.2h10.4a1.8 1.8 0 0 1 1.8 1.8v9.6"/>',
+    "power": '<path d="M12 3.8v8"/><path d="M7.2 6.8a7.6 7.6 0 1 0 9.6 0"/>',
+    "print": '<path d="M7.4 9.2V4.6h9.2v4.6"/><rect x="4" y="9.2" width="16" height="7.4" rx="2"/><rect x="7.4" y="13.6" width="9.2" height="6" rx="1" fill="none"/>',
+    "sliders": '<path d="M4.4 8h6.2M14.4 8h5.2M4.4 16h3.2M11.4 16h8.2"/><circle cx="12.5" cy="8" r="1.9"/><circle cx="9.5" cy="16" r="1.9"/>',
+    "tab_search": '<rect x="3.8" y="4.6" width="16.4" height="14.8" rx="2.6"/><path d="M3.8 9.4h16.4"/><circle cx="11" cy="14" r="2.3"/><path d="m12.8 15.8 1.8 1.8"/>',
+    "tool": '<path d="M14.6 4.6a4.4 4.4 0 0 0-4 6L4.8 16.4a1.9 1.9 0 0 0 2.8 2.8l5.8-5.8a4.4 4.4 0 0 0 6-4l-3 3-2.6-.6-.6-2.6z"/>',
+    "trash": '<path d="M4.8 7h14.4"/><path d="M9.4 7V5.2a1 1 0 0 1 1-1h3.2a1 1 0 0 1 1 1V7"/><path d="M6.4 7l.8 11.6a1.6 1.6 0 0 0 1.6 1.4h6.4a1.6 1.6 0 0 0 1.6-1.4L17.6 7"/><path d="M10.2 11v5M13.8 11v5"/>',
+    "type": '<path d="M5.4 7.4V5.6h13.2v1.8M12 5.6v13"/><path d="M9.4 18.6h5.2"/>',
+    "undo": '<path d="M8.4 5.8 4.6 9.6l3.8 3.8"/><path d="M5 9.6h8.6a5.4 5.4 0 0 1 0 10.8H9"/>',
+    "zoom": '<circle cx="10.6" cy="10.6" r="6.1"/><path d="m15.2 15.2 4.8 4.8M10.6 8v5.2M8 10.6h5.2"/>',
+    "accessibility": '<circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="8.2" r="1.1" ' + F + '/><path d="M7.6 10.8c3 .8 6.8.8 8.8 0M12 11.4v3.2m0 0-2.2 3.4m2.2-3.4 2.2 3.4"/>',
+    # added in 3.1
+    "user": '<circle cx="12" cy="8.6" r="3.7"/><path d="M4.8 19.8c.6-3.6 3.4-5.6 7.2-5.6s6.6 2 7.2 5.6"/>',
+    "user_fill": '<circle cx="12" cy="8.6" r="3.9" fill="currentColor"/><path d="M4.4 20c.5-3.9 3.5-6 7.6-6s7.1 2.1 7.6 6z" fill="currentColor"/>',
+    "install": '<rect x="3.8" y="4.4" width="16.4" height="11.2" rx="2.4"/><path d="M12 7.2v5.2M9.6 10.2l2.4 2.4 2.4-2.4"/><path d="M8.4 19.6h7.2M12 15.6v4"/>',
+    "vpn": '<path d="M12 3.6 5.2 6.2v5.4c0 4.3 2.9 7.5 6.8 8.8 3.9-1.3 6.8-4.5 6.8-8.8V6.2z"/><circle cx="12" cy="11.6" r="3"/><path d="M9 11.6h6M12 8.6c-1.2 1.6-1.2 4.2 0 6M12 8.6c1.2 1.6 1.2 4.2 0 6"/>',
+    "key": '<circle cx="8.2" cy="12" r="3.8"/><path d="M12 12h8.2M17 12v3M20.2 12v2.2"/>',
+    "sync": '<path d="M4.8 12a7.2 7.2 0 0 1 12.6-4.8L19.4 9"/><path d="M19.4 4.8V9h-4.2"/><path d="M19.2 12a7.2 7.2 0 0 1-12.6 4.8L4.6 15"/><path d="M4.6 19.2V15h4.2"/>',
+    "wifi_off": '<path d="M3.8 9.4a12.4 12.4 0 0 1 3.6-2.2M20.2 9.4a12.4 12.4 0 0 0-8.2-3.2M6.8 12.8a8 8 0 0 1 2.6-1.6M17.2 12.8a8 8 0 0 0-3.8-1.8"/><circle cx="12" cy="17.2" r="1.2" ' + F + '/><path d="m4 4 16 16"/>',
+    "qr": '<rect x="4.4" y="4.4" width="5.6" height="5.6" rx="1.2"/><rect x="14" y="4.4" width="5.6" height="5.6" rx="1.2"/><rect x="4.4" y="14" width="5.6" height="5.6" rx="1.2"/><path d="M14 14h2.4v2.4M19.6 14v.1M14 19.6h.1M16.8 19.6h2.8v-2.4"/>',
+    "reader": '<path d="M5 5.4h14v13.2H5z"/><path d="M8.6 9.4h6.8M8.6 12.4h6.8M8.6 15.4h4"/>',
+    "camera": '<path d="M4.4 8.6a1.8 1.8 0 0 1 1.8-1.8h1.6l1.2-1.8h6l1.2 1.8h1.6a1.8 1.8 0 0 1 1.8 1.8v8.6a1.8 1.8 0 0 1-1.8 1.8H6.2a1.8 1.8 0 0 1-1.8-1.8z"/><circle cx="12" cy="12.8" r="3.2"/>',
+    "task": '<rect x="4" y="5" width="16" height="14" rx="2.4"/><path d="M7.6 9.4h8.8M7.6 12.6h8.8M7.6 15.8h5"/>',
+    "wrench": '<path d="M14.6 4.6a4.4 4.4 0 0 0-4 6L4.8 16.4a1.9 1.9 0 0 0 2.8 2.8l5.8-5.8a4.4 4.4 0 0 0 6-4l-3 3-2.6-.6-.6-2.6z"/>',
+}
+
+# the product mark: a squircle with the "null" symbol (ring + slash)
+LOGO_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">'
+            '<stop offset="0" stop-color="#8b6cff"/><stop offset="1" stop-color="#4326d8"/></linearGradient></defs>'
+            '<rect width="64" height="64" rx="16" fill="url(#g)"/>'
+            '<circle cx="32" cy="32" r="15.5" fill="none" stroke="#fff" stroke-width="5.2"/>'
+            '<path d="M18.5 47.5 45.5 16.5" stroke="#4326d8" stroke-width="9" stroke-linecap="round"/>'
+            '<path d="M18.5 47.5 45.5 16.5" stroke="#fff" stroke-width="5.2" stroke-linecap="round"/></svg>')
+
+
+def main():
+    py = ('"""Icon geometry for Null Browser: original artwork drawn for this project (see tools/gen_icons.py, which writes this file).\n'
+          '24x24 viewBox, round-capped strokes."""\nP = {\n' + "".join(f" {json.dumps(k)}: {json.dumps(v)},\n" for k, v in ICONS.items()) + "}\n")
+    with open(os.path.join(ROOT, "null_browser", "ui", "icon_paths.py"), "w", encoding="utf-8") as f:
+        f.write(py)
+    js = ('/* Null Browser icon set: original artwork (tools/gen_icons.py). Generated file. */\n"use strict";\nconst ICONS = {\n'
+          + "".join(f" {json.dumps(k)}: {json.dumps(v)},\n" for k, v in ICONS.items()) + "};\n")
+    old = open(os.path.join(ROOT, "null_browser", "web", "static", "icons.js"), encoding="utf-8").read()
+    tail = old[old.index("};", old.index("const ICONS")) + 3:]            # keep the helper functions that follow the table
+    with open(os.path.join(ROOT, "null_browser", "web", "static", "icons.js"), "w", encoding="utf-8") as f:
+        f.write(js + tail)
+    assets = os.path.join(ROOT, "null_browser", "assets")
+    os.makedirs(assets, exist_ok=True)
+    with open(os.path.join(assets, "null-browser.svg"), "w", encoding="utf-8") as f:
+        f.write(LOGO_SVG)
+    with open(os.path.join(ROOT, "null_browser", "web", "static", "icon.svg"), "w", encoding="utf-8") as f:
+        f.write(LOGO_SVG)
+    print(len(ICONS), "icons")
+
+
+if __name__ == "__main__":
+    main()

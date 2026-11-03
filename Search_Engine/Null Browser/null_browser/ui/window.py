@@ -4,7 +4,7 @@ import re
 
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QKeySequence
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QProgressBar, QStackedWidget, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QProgressBar, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..constants import APP_NAME, SCHEME
 from ..core import crash
@@ -15,7 +15,8 @@ from .popups import DownloadsPopup, InfoBar, SiteInfoPopup
 from .tab import Tab
 from .tabbar import TabStrip, TitleStrip, WindowControls
 from .tips import tip, tip_html
-from .widgets import HoverToolButton
+from .widgets import HoverToolButton, NavButton
+from .window_apps import WindowAppsMixin
 from .window_bookmarks import BookmarksBarMixin
 from .window_dragdrop import TabTransferMixin
 from .window_frame import WindowFrameMixin
@@ -24,7 +25,7 @@ from .window_menus import MenusMixin
 log = logging.getLogger("null.window")
 
 
-class MainWindow(BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMixin, QMainWindow):
+class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMixin, QMainWindow):
     """The browser window. Tab handling, chrome state and actions live here; see the window_*.py mixins for the rest."""
     closedSignal = pyqtSignal(object)
 
@@ -107,10 +108,18 @@ class MainWindow(BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMix
         th.setContentsMargins(8, 4, 8, 4)
         th.setSpacing(2)
         mk = lambda tip, fn: self._tbtn(tip, fn)
-        self.back_btn = mk(("Back", "Go to the previous page", "Alt+Left"), lambda: self.cur_do("back"))
-        self.fwd_btn = mk(("Forward", "Go to the next page", "Alt+Right"), lambda: self.cur_do("forward"))
-        self.reload_btn = mk(("Reload", "Load this page again", "Ctrl+R"), self.reload_or_stop)
-        self.home_btn = mk(("Home", "Open your home page", "Alt+Home"), self.go_home)
+        self.back_btn = self._tbtn(("Back", "Go to the previous page. Right-click or hold to see the list", "Alt+Left"), lambda: self.cur_do("back"), nav=True)
+        self.fwd_btn = self._tbtn(("Forward", "Go to the next page. Right-click or hold to see the list", "Alt+Right"), lambda: self.cur_do("forward"), nav=True)
+        self.reload_btn = self._tbtn(("Reload", "Load this page again. Shift-click reloads without the cache", "Ctrl+R"), self.reload_or_stop, nav=True)
+        self.home_btn = self._tbtn(("Home", "Open your home page. Middle-click opens it in a new tab", "Alt+Home"), self.go_home, nav=True)
+        self.back_btn.wants_hold_menu(True)
+        self.fwd_btn.wants_hold_menu(True)
+        self.back_btn.menuRequested.connect(lambda: self.history_menu(-1))
+        self.fwd_btn.menuRequested.connect(lambda: self.history_menu(1))
+        self.back_btn.middleClicked.connect(lambda: self.history_open(-1, new_tab=True))
+        self.fwd_btn.middleClicked.connect(lambda: self.history_open(1, new_tab=True))
+        self.home_btn.middleClicked.connect(lambda: self.open_url(self.app.settings.get("homepage") or f"{SCHEME}://newtab", background=True))
+        self.reload_btn.middleClicked.connect(lambda: (self.current() and self.new_tab(self.current().real_url().toString(), background=True)))
         self.omni = Omnibox(self)
         self.omni.navigate.connect(self.navigate_text)
         self.omni.securityClicked.connect(self.show_site_info)
@@ -122,12 +131,15 @@ class MainWindow(BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMix
         self.dl_btn = mk(("Downloads", "See files you have downloaded", "Ctrl+J"), self.show_downloads_popup)
         self.dl_btn.hide()
         self.menu_btn = mk(("Menu", "Customize and control Null Browser: history, bookmarks, settings and more"), self.show_main_menu)
+        self.build_account_buttons()
         for w in (self.back_btn, self.fwd_btn, self.reload_btn, self.home_btn):
             th.addWidget(w)
         th.addSpacing(4)
         th.addWidget(self.omni, 1)
         th.addSpacing(4)
+        th.addWidget(self.vpn_btn)
         th.addWidget(self.dl_btn)
+        th.addWidget(self.account_btn)
         th.addWidget(self.menu_btn)
         v.addWidget(self.toolbar)
         self.loadbar = QProgressBar()
@@ -178,8 +190,8 @@ class MainWindow(BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMix
         p = self.pal
         return p["hover"], p["press"]
 
-    def _tbtn(self, tipspec, fn):
-        b = HoverToolButton(self._hover_colors)
+    def _tbtn(self, tipspec, fn, nav=False):
+        b = (NavButton if nav else HoverToolButton)(self._hover_colors)
         tip(b, *tipspec)
         b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setIconSize(QSize(20, 20))
@@ -266,6 +278,8 @@ class MainWindow(BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMix
         self.tabsearch_btn.setIconSize(QSize(14, 14))
         self.wc.refresh()
         self.omni.restyle()
+        self.refresh_account_button()
+        self.refresh_vpn_button()
         self.tabbar.restyle()
         for t in self.tabs:
             t.find.restyle()
@@ -433,6 +447,7 @@ class MainWindow(BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMix
         if not loading:
             self._tab_icon(tab)
             self._tab_title(tab)
+            self.probe_installable(tab)
         if tab is self.current():
             self.update_toolbar_state()
             if not loading:
@@ -546,6 +561,7 @@ class MainWindow(BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMix
         self.omni.shield_chip.setVisible(n > 0)
         self.omni.shield_chip.setIcon(self.icon("shield", color=self.accent, size=16))
         self.omni.shield_chip.setText(str(n))
+        self.update_install_chip()
         self.update_star()
 
 
@@ -582,8 +598,14 @@ class MainWindow(BookmarksBarMixin, WindowFrameMixin, TabTransferMixin, MenusMix
 
     def reload_or_stop(self):
         t = self.current()
-        if t:
-            t.stop() if t.loading else t.reload()
+        if not t:
+            return
+        if t.loading:
+            t.stop()
+        elif QApplication.keyboardModifiers() & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier):
+            t.page.triggerAction(t.page.WebAction.ReloadAndBypassCache)      # Ctrl/Shift + click: hard reload, like Chrome
+        else:
+            t.reload()
 
     def focus_omnibox(self):
         self.omni.focus_and_select()

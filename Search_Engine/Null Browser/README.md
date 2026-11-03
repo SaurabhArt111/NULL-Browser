@@ -7,7 +7,7 @@ linked Null Search Engine.
 pip install -r requirements.txt          # optional: pip install -r requirements-optional.txt (Rust ad-block engine)
 python main.py                           # options: --safe-mode, --private, --data-dir DIR, --new-instance
 python -m unittest discover tests        # unit tests (no Qt needed)
-QT_QPA_PLATFORM=offscreen python main.py --data-dir /tmp/nb --new-instance --selftest /tmp/nb-out   # 75 end-to-end checks
+QT_QPA_PLATFORM=offscreen python main.py --data-dir /tmp/nb --new-instance --selftest /tmp/nb-out   # ~150 end-to-end checks
 ```
 
 ## Layout
@@ -22,6 +22,8 @@ null_browser/
     app_policies.py           theme, page settings, per-site policy, permission shim, zoom
     app_instances.py          second launch -> running instance (local socket)
     app_data.py               clear browsing data, memory saver
+    app_accounts.py           Google sign-in that survives "Clear browsing data"
+    app_pwa.py                installed web apps: install, update, shortcuts, uninstall
   video/                      H.264 / AAC playback bridge (ffmpeg): shim.js in the page, service.py, ffmpeg.py
   engine/                     the Chromium side
     flags.py                  every Chromium switch, decided in one place
@@ -35,6 +37,9 @@ null_browser/
     cosmetic.py               element hiding (stylesheet + MutationObserver, no polling)
     scriptlets.py, pyabp.py   scriptlet resources and the pure-Python engine
   core/                       settings, database, downloads, permissions, search, notifications, crash guard
+    vpn.py  vpn_qt.py         built-in VPN (proxy tunnel) and its Qt-side leak protection
+    accounts.py  cookie_keeper.py   Google identity + the cookie mirror behind "stay signed in"
+    pwa.py                    manifest parsing, scope rules, update fingerprints, app store
   ui/
     window.py                 MainWindow (tabs, chrome state, actions)
       window_bookmarks.py  window_menus.py  window_frame.py  window_dragdrop.py
@@ -42,6 +47,8 @@ null_browser/
       page.py  findbar.py  permission_bubble.py
       tab_menu.py  tab_devtools.py  tab_permissions.py  tab_tools.py
     omnibox.py  tabbar.py  popups.py  widgets.py  theme.py  icons.py  native.py  winframe.py  autoscroll.py
+    window_apps.py            profile button, VPN button, "Install app" chip, Apps menu
+    pwa_window.py  pwa_install.py   window of an installed web app and its install dialog
   web/                        null:// pages (settings, history, ...) and their JSON API
 tests/                        unit tests
 docs/VIDEO_CODECS.md          why some videos cannot play and what to do
@@ -50,7 +57,47 @@ docs/VIDEO_CODECS.md          why some videos cannot play and what to do
 Rules the layout follows: `privacy/` and `engine/` never import `ui/`; mixins hold behaviour, the class they are mixed into holds
 state and signals; nothing in the request interceptor may block.
 
-## What changed in this release
+## What is new in 3.1
+
+**Look and feel**
+* Original icon set (93 icons, `tools/gen_icons.py`) and a new app logo; no third-party icon geometry is used any more.
+* Tab strip rewritten: Chrome-shaped tabs, the selected tab is always drawn on top, dragging follows the pointer and the other
+  tabs glide out of the way, tabs press-select instantly, middle-click closes.
+* Bookmarks bar: drag to reorder (an accent line shows where it lands), drop a link on it to bookmark it, Ctrl+click / middle-click
+  open a background tab, Shift+click a new window, folder menus with "Open all", rename / delete folders, "Bookmark all tabs…".
+* Mouse: Back / Forward open a history list on right-click or hold, middle-click opens the target in a new tab, Shift/Ctrl+click on
+  Reload reloads without the cache, middle-click on Home opens it in a new tab.
+* **Auto-scroll** (middle button) is drawn by the page itself with its own cursor. Chromium's native one showed Windows' vertical
+  resize arrows; the new one shows a disc with arrows, scrolls up / down / sideways, farther = faster, and ends on click, key or wheel.
+
+**Google account (browser level)**
+* Sign in once (profile button, top right, or Settings -> Google account). The identity is kept in `account.json`, outside the web
+  profile, and "Clear browsing data" / "Clear on exit" delete every cookie *except* Google's sign-in cookies, so you stay signed in.
+  Switch that off in Settings -> Google account. This is not Chrome Sync: nothing is uploaded.
+
+**VPN**
+* Settings -> VPN: add a SOCKS5 / HTTP / HTTPS proxy, press Test, turn it on (the browser restarts and brings your tabs back).
+  Web pages, downloads, WebSockets, DNS and Qt's own requests use the tunnel; WebRTC is limited to it; if the server dies pages fail
+  instead of going out directly. Servers are not included: use your provider's endpoint, Tor, or `ssh -D 1080 user@host`.
+
+**Apps (PWA)**
+* "Install" chip in the address bar (or Menu -> Apps) opens a site in its own window with its own profile and storage, desktop /
+  Start-menu shortcut, theme colour, scope-aware links (outside links open in the browser) and update checks (manifest changes are
+  applied; "Update now" also drops the cache and updates service workers). Clearing browsing data never touches installed apps.
+  Launch from a shortcut with `python main.py --app <id>`.
+
+**Share nothing**
+* Settings -> Privacy -> "Share nothing with anyone" (on by default) switches off Chromium's background connections (update checks,
+  safe browsing pings, crash/usage reports, DNS prefetch, sync, domain reliability). Search suggestions and ad-list updates are off by
+  default. The user agent no longer carries a Null Browser token.
+
+**Limits you should know about**
+* Qt WebEngine cannot load Chrome extensions or the Chrome Web Store, and there is no Chrome Sync service.
+* The VPN is a browser-only proxy tunnel, not a system VPN, and needs a server from you. Chromium cannot authenticate to SOCKS5.
+* H.264 sites (X, Reddit, Instagram, Facebook) still need the ffmpeg bridge (`pip install imageio-ffmpeg`).
+* The Windows-only pieces (native frame, `.lnk` shortcuts) could not be run in the Linux test environment.
+
+## What changed in 3.0
 
 **Flicker and lag**
 * Removed the colour veil that faded over the page on every tab switch.

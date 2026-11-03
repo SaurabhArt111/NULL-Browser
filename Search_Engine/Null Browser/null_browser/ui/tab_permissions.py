@@ -95,6 +95,11 @@ class PermissionsMixin:
         self._auth_dialog(f"Sign in to {url.host()}", auth.realm() or url.host(), auth)
 
     def on_proxy_auth(self, url, auth, host):
+        creds = self.app.vpn.credentials_for(host)
+        if creds:                                           # the built-in VPN's own proxy: answer silently with the saved login
+            auth.setUser(creds[0])
+            auth.setPassword(creds[1])
+            return
         self._auth_dialog(f"Proxy {host}", auth.realm() or host, auth)
 
     def _auth_dialog(self, title, realm, auth):

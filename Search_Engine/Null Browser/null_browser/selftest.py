@@ -559,6 +559,8 @@ def _run(app, outdir):
     # ---- downloads/db/clear -----------------------------------------------------------------------------------------------
     app.clear_data({"history", "cookies", "cache"}, "all")
     ok("clear browsing data", app.db.history("") == [])
+    from . import selftest_ext
+    selftest_ext.run_ext(__import__("null_browser.selftest", fromlist=["x"]), app, w, base, outdir)
     # ---- final screenshot of a normal window with menu closed
     load(w.current(), "null://newtab")
     shot(w, outdir, "newtab")
