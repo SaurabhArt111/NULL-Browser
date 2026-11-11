@@ -21,6 +21,10 @@ When the engine cannot decode H.264 and **ffmpeg** is available, Null Browser co
   converted as they arrive, a few times faster than real time on a normal computer.
 * Plain `<video src="clip.mp4">` files (X "GIFs", Reddit fallback videos ...) are downloaded by the browser, checked against the
   ad-block lists, converted and streamed to the element while the conversion runs.
+* Players inside frames (embeds on other sites) have no web channel of their own in Qt WebEngine, so their copy of the script talks to the
+  top document's copy by `postMessage`, and that one forwards to the browser. Only frames of the same page are answered, and a page that is
+  embedded in a hostile site can be seen by that site's scripts (they could read the video pieces that frame converts). Turn the setting off
+  if that matters to you.
 * Pages talk to the browser through Qt's web channel, so the sites' Content-Security-Policy is not involved. A page cannot make the
   browser fetch addresses on your own computer or network (those are refused), at most 6 conversions per page run at once, and
   nothing is exposed to pages when the setting is off or ffmpeg is missing.

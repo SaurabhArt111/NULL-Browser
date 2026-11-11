@@ -46,11 +46,14 @@ def build(settings_path, safe=False, enhanced=True, debug=False):
     if data.get("share_nothing", True) and not safe:
         flags += ["--disable-background-networking", "--disable-component-update", "--disable-domain-reliability", "--no-pings",
                   "--disable-client-side-phishing-detection", "--no-report-upload", "--disable-breakpad", "--disable-sync",
-                  "--disable-default-apps", "--no-default-browser-check", "--dns-prefetch-disable"]
+                  "--disable-default-apps", "--no-default-browser-check"]
+        if data.get("preload_pages") is False:             # default: on. Looking up the sites a page links to is what makes the next click fast
+            flags.append("--dns-prefetch-disable")
+            features_off.append("NetworkPrediction")
         features_off += ["OptimizationHints", "OptimizationGuideModelDownloading", "OptimizationHintsFetching", "OptimizationTargetPrediction",
                          "BrowsingTopics", "BrowsingTopicsParameters", "Fledge", "FledgeBiddingAndAuctionServer", "InterestGroupStorage",
                          "AttributionReporting", "PrivateAggregationApi", "SharedStorageAPI", "PrivateStateTokens", "InterestFeedContentSuggestions",
-                         "NetworkTimeServiceQuerying", "AutofillServerCommunication", "MediaRouter", "GlobalMediaControls", "NetworkPrediction",
+                         "NetworkTimeServiceQuerying", "AutofillServerCommunication", "MediaRouter", "GlobalMediaControls",
                          "PrivacySandboxSettings4", "TrackingProtection3pcd"]
     if features_off:
         flags.append("--disable-features=" + ",".join(dict.fromkeys(features_off)))

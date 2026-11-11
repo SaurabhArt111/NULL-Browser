@@ -163,7 +163,7 @@
       h("h2", {}, "Sign-ins and site data"),
       card(switchRow("Keep cookies and site data", "On (default): you stay signed in to websites, and cookies and site data are kept until you delete them in Clear browsing data. Turn off to keep them in memory only (they vanish when Null Browser closes; needs a relaunch). Null Browser never stores passwords or autofill data itself.", S.save_site_data !== false, v => set("save_site_data", v))),
       h("h2", {}, "Share nothing"),
-      card(switchRow("Share nothing with anyone", "On (default): the engine makes no background connections of its own: no Google update, safe-browsing, crash-report, telemetry, DNS-prefetch or sync requests, and the browser never contacts a Null server. Sites you open are the only thing that is contacted. Needs a relaunch.", S.share_nothing !== false, v => set("share_nothing", v))),
+      card(switchRow("Share nothing with anyone", "On (default): the engine makes no background connections of its own: no Google update, safe-browsing, crash-report, telemetry or sync requests, and the browser never contacts a Null server. Sites you open are the only thing that is contacted. Needs a relaunch.", S.share_nothing !== false, v => set("share_nothing", v))),
       h("h2", {}, "Tracking protection"),
       card(switchRow("Block ads", "Built-in ad blocker (works without extensions)", S.adblock, v => set("adblock", v)),
         switchRow("Block trackers", "Analytics and tracking scripts loaded from other sites", S.block_trackers, v => set("block_trackers", v)),
@@ -219,6 +219,8 @@
   R.performance = () => [h("h1", {}, "Performance"),
     card(switchRow("Memory Saver", "Frees memory from tabs you haven't used for a while. They reload when you return.", S.memory_saver, v => set("memory_saver", v)),
       selectRow("Deactivate inactive tabs after", "", [[5, "5 minutes"], [10, "10 minutes"], [15, "15 minutes"], [30, "30 minutes"], [60, "1 hour"]].map(([v, l]) => [String(v), l]), String(S.memory_saver_minutes), v => set("memory_saver_minutes", +v))),
+    card(switchRow("Pause silent background tabs", "Tabs you are not looking at stop running scripts after a few minutes (not while they play sound or load) and wake up the moment you select them. Saves CPU and battery.", S.freeze_background_tabs !== false, v => set("freeze_background_tabs", v)),
+      switchRow("Preload sites for faster clicks", "Lets the engine look up and connect to sites a page links to before you click. Only the address lookup and connection are made, nothing is downloaded or shared with Null. Needs a relaunch.", S.preload_pages !== false, v => set("preload_pages", v))),
     card(switchRow("Use graphics acceleration when available", "Needs a restart", S.hardware_acceleration, v => set("hardware_acceleration", v)),
       switchRow("Smooth scrolling", "", S.smooth_scrolling, v => set("smooth_scrolling", v)))];
   R.appearance = () => [h("h1", {}, "Appearance"),

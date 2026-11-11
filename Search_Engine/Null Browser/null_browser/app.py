@@ -118,11 +118,14 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         self._build_tray()
         self.apply_theme()
 
+        from .core.sitebg import SiteBackgrounds
+        self.site_bg = SiteBackgrounds()
         self.mem_timer = QTimer(self, interval=60_000)
         self.mem_timer.timeout.connect(self.memory_saver_tick)
         self.mem_timer.start()
         self.session_timer = QTimer(self, interval=20_000)
         self.session_timer.timeout.connect(self.save_session)
+        self.session_timer.timeout.connect(self.site_bg.save)
         self.session_timer.start()
         self.qapp.setQuitOnLastWindowClosed(not self.settings.get("background_running"))
         self.qapp.aboutToQuit.connect(self.shutdown)
@@ -195,6 +198,10 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         return (self.search.search_url(query, google) if query else google["home"]), True
 
     def quit_all(self):
+        try:
+            self.site_bg.save()
+        except Exception:
+            pass
         self.quit()
 
     def window_closing(self, win):

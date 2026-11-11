@@ -71,14 +71,14 @@ class Transcoder:
         self._lock = threading.Lock()
         self._step = 0
         self._slow = self._fast = 0
-        self.stats = {"pieces": 0, "seconds_media": 0.0, "seconds_work": 0.0, "max_height": 0}
+        self.stats = {"pieces": 0, "seconds_media": 0.0, "seconds_work": 0.0, "max_height": 0, "failed": 0, "retried": 0, "last_error": ""}
 
     @property
     def max_height(self):
         return LADDER[self._step]
 
     def _adapt(self, media_s, work_s):
-        if media_s <= 0.2:
+        if media_s < 1.0:                      # a short piece is mostly process start-up: it says nothing about the speed
             return
         ratio = work_s / media_s
         with self._lock:
@@ -115,10 +115,22 @@ class Transcoder:
         args += ["-c:a", "libopus", "-b:a", "128k", "-ar", "48000"] if audio else ["-an"]
         args += ["-f", "webm", "pipe:1"]
         t0 = time.perf_counter()
-        p = _run(args, timeout=120, data=init + fragments)
+        data = init + fragments
+        p = _run(args, timeout=120, data=data)
         work = time.perf_counter() - t0
         if p.returncode != 0 or not p.stdout:
-            raise RuntimeError(p.stderr.decode("utf-8", "replace")[-300:] or f"ffmpeg exit {p.returncode}")
+            # Streams from live players are sometimes slightly malformed (a cut piece, missing durations): try once more, tolerantly.
+            with self._lock:
+                self.stats["retried"] += 1
+            tolerant = args[:5] + ["-err_detect", "ignore_err", "-fflags", "+discardcorrupt+genpts"] + args[5:]
+            p = _run(tolerant, timeout=120, data=data)
+            work = time.perf_counter() - t0
+        if p.returncode != 0 or not p.stdout:
+            msg = p.stderr.decode("utf-8", "replace")[-300:] or f"ffmpeg exit {p.returncode}"
+            with self._lock:
+                self.stats["failed"] += 1
+                self.stats["last_error"] = msg[-200:]
+            raise RuntimeError(msg)
         if video:
             self._adapt(media_s, work)
         return p.stdout

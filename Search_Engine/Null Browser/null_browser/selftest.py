@@ -128,7 +128,9 @@ PAGES = {
         try{ms.endOfStream();}catch(e){}
         await new Promise(r=>setTimeout(r,2500));
         R.t=v.currentTime; R.w=v.videoWidth; R.err=v.error?v.error.code:0;
-      }catch(e){ R.exc=String(e); } R.done=true; })();</script></body></html>""",
+      }catch(e){ R.exc=String(e); } R.done=true; try{ if(parent!==window) parent.postMessage({nullTestR:R},'*'); }catch(e){} })();</script></body></html>""",
+    "/h264frame.html": """<html><body style="margin:0"><iframe width=320 height=180 style="border:0" src="FRAME_SRC"></iframe><script>
+      window.R=null; addEventListener('message',e=>{ if(e.data&&e.data.nullTestR){ window.R=e.data.nullTestR; window.R.done=true; } });</script></body></html>""",
     "/h264file.html": """<html><body style="margin:0"><video id=v muted autoplay loop playsinline width=320 height=180 src="/m/prog.mp4"></video><script>
       window.R={}; setTimeout(()=>{ const v=document.getElementById('v'); R.t=v.currentTime; R.w=v.videoWidth; R.err=v.error?v.error.code:0; R.done=true; }, 5500);</script></body></html>""",
     "/zoom.html": "<html><title>zoom</title><body>zoom test</body></html>",
@@ -449,6 +451,12 @@ def _run(app, outdir):
                     ok("video bridge: an H.264 + AAC MediaSource stream plays", (r.get("t") or 0) > 0.8 and r.get("w") == 320 and not r.get("err"), str(r))
                 else:
                     ok("video bridge: an H.264 + AAC MediaSource stream plays", False, str(r))
+                # the same player inside a frame of ANOTHER origin (the engine gives frames no line to the browser: the shim relays)
+                PAGES["/h264frame.html"] = PAGES["/h264frame.html"].replace("FRAME_SRC", base.replace("127.0.0.1", "localhost") + "/h264mse.html")
+                load(t, base + "/h264frame.html")
+                wait_until(lambda: js(t, "!!window.R && R.done"), 40000)
+                r = json.loads(js(t, "JSON.stringify(R)") or "{}")
+                ok("video bridge: a player inside a cross-origin frame plays", (r.get("t") or 0) > 0.8 and r.get("w") == 320 and not r.get("err") and "exc" not in r, str(r))
                 load(t, base + "/h264file.html")
                 wait_until(lambda: js(t, "!!window.R && R.done"), 40000)
                 r = json.loads(js(t, "JSON.stringify(R)") or "{}")

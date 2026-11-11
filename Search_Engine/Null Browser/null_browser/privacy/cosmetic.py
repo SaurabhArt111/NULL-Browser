@@ -12,6 +12,9 @@ How it works (main thread only):
    them. It polls every 250 ms during the first seconds after navigation (when ad slots appear, so nothing sits on screen for
    long) and every 1.2 s afterwards. An idle page costs one tiny `runJavaScript` per tick and nothing else.
 
+Names are remembered inside the page, so a name is queued (and the browser pinged) only the first time it is ever seen: busy feeds
+(X, Reddit) that keep re-using the same classes cost nothing after the first seconds.
+
 Previously generic rules were applied once, after the load event and again 2.5 s later: slots were visible for seconds and
 then collapsed (layout shift = flicker), and anything inserted later was never hidden.
 
@@ -28,7 +31,7 @@ log = logging.getLogger("null.cosmetic")
 SCRIPT_NAME = "null-cosmetic"
 QUrlFull = QUrl.ComponentFormattingOption.FullyEncoded
 MAX_SELECTORS = 20000
-FAST_MS, SLOW_MS, FAST_TICKS = 250, 1200, 20            # 20 fast ticks = the first 5 seconds
+FAST_MS, SLOW_MS, FAST_TICKS = 250, 4000, 20            # 20 fast ticks = the first 5 seconds; after that the page's own pings do the work
 TOKEN = "nullcq-" + secrets.token_hex(8)                # console message the page sends when its queue is non-empty (see Tab / BrowserPage)
 
 _SHEET = r"""var s=window.__nullSheet;if(!s){s=window.__nullSheet=new CSSStyleSheet();
@@ -38,12 +41,14 @@ document.adoptedStyleSheets=(document.adoptedStyleSheets||[]).concat([s]);}"""
 # Queue of class names / ids added to the page. Runs at document creation, before the page's own scripts.
 # When the queue becomes non-empty it pings the browser (one console message, throttled to ~30 ms) so the drain happens at once
 # instead of waiting for the next timer tick: that is what keeps the time an ad slot is visible down to a frame or two.
-_OBSERVER = r"""(function(){try{if(window.__nullCQ)return;var q={c:new Set(),i:new Set()},dbg=console.debug.bind(console),wait=false;
+_OBSERVER = r"""(function(){try{if(window.__nullCQ)return;var q={c:new Set(),i:new Set()},seen=new Set(),dbg=console.debug.bind(console),wait=false;
 Object.defineProperty(window,'__nullCQ',{value:q,enumerable:false});
-function ping(){if(wait)return;wait=true;setTimeout(function(){wait=false;if(q.c.size||q.i.size)dbg('__TOKEN__');},30);}
-function take(n){if(n.nodeType!==1)return;if(n.id)q.i.add(n.id);var cl=n.classList;if(cl)for(var k=0;k<cl.length;k++)q.c.add(cl[k]);}
+function ping(){if(wait)return;wait=true;setTimeout(function(){wait=false;if(q.c.size||q.i.size)dbg('__TOKEN__');},120);}
+function add(set,p,v){var k=p+v;if(seen.has(k))return;seen.add(k);set.add(v);}
+function take(n){if(n.nodeType!==1)return;if(n.id)add(q.i,'#',n.id);var cl=n.classList;if(cl)for(var k=0;k<cl.length;k++)add(q.c,'.',cl[k]);}
 function scan(n){take(n);if(n.querySelectorAll){var a=n.querySelectorAll('[class],[id]');for(var k=0;k<a.length&&k<6000;k++)take(a[k]);}}
-new MutationObserver(function(ms){for(var i=0;i<ms.length;i++){var m=ms[i];if(m.type==='childList'){for(var j=0;j<m.addedNodes.length;j++)scan(m.addedNodes[j]);}else take(m.target);}ping();})
+new MutationObserver(function(ms){for(var i=0;i<ms.length;i++){var m=ms[i];if(m.type==='childList'){for(var j=0;j<m.addedNodes.length;j++){var a=m.addedNodes[j];if(a.nodeType===1&&a.firstElementChild)scan(a);else take(a);}}else take(m.target);}
+ if(q.c.size||q.i.size)ping();})
  .observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['class','id']});
 document.addEventListener('DOMContentLoaded',function(){scan(document.documentElement);ping();},{once:true});
 }catch(e){}})();""".replace('__TOKEN__', TOKEN)

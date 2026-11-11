@@ -210,7 +210,7 @@ class VideoService:
     def __init__(self, settings):
         self.settings = settings
         self.exe, self.caps, self.transcoder = "", {}, None
-        self.pool = ThreadPoolExecutor(max_workers=max(2, min(3, (os.cpu_count() or 2))), thread_name_prefix="null-video")
+        self.pool = ThreadPoolExecutor(max_workers=max(3, min(6, (os.cpu_count() or 2))), thread_name_prefix="null-video")
         self._js = None
         self.vpn = None                     # set by the app: the VpnStore, so file fetches use the same tunnel as the pages
         self.adblock = None                 # set by the app: used to apply the ad-block rules to files fetched on a page's behalf

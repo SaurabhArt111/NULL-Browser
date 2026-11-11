@@ -9,7 +9,10 @@
  */
 (function () {
   "use strict";
-  if (window.__nullVideo || !window.MediaSource || !window.qt || !qt.webChannelTransport) return;
+  var DIRECT = !!(window.qt && qt.webChannelTransport), IS_TOP = window === window.top;
+  /* The engine only gives the top document a line to the browser. A frame (an embedded X / Reddit / video-site player) talks to the
+     browser through the top document's copy of this file, by postMessage. */
+  if (window.__nullVideo || !window.MediaSource || (!DIRECT && IS_TOP)) return;
   var MS = window.MediaSource, NATIVE_IS = MS.isTypeSupported.bind(MS);
   try { if (NATIVE_IS('video/mp4; codecs="avc1.42E01E"') && NATIVE_IS('audio/mp4; codecs="mp4a.40.2"')) return; } catch (e) { return; }
   window.__nullVideo = true;
@@ -17,16 +20,77 @@
   function log() { if (LOG) try { console.debug.apply(console, ["[null-video]"].concat([].slice.call(arguments))); } catch (e) {} }
 
   /* ------------------------------------------------------------------ bridge */
-  var bridge = null, waiting = [], pend = new Map(), progs = new Map(), nextId = 1;
-  new QWebChannel(qt.webChannelTransport, function (ch) {
-    bridge = ch.objects.nullVideo;
-    bridge.done.connect(function (id, ok, payload) {
-      var p = pend.get(id); if (!p) return; pend.delete(id); p(ok, payload);
+  /* Nothing is opened until a video really needs converting, so ordinary pages pay nothing for this file. */
+  var TAG = "__nullVideo1", bridge = null, waiting = [], starting = false, pend = new Map(), progs = new Map(), nextId = 1;
+  var rel = new Map(), relBy = new WeakMap();            // top document only: requests relayed for frames
+  function onDone(id, ok, payload) { var p = pend.get(id); if (!p) return; pend.delete(id); p(ok, payload); }
+  function onProgress(id, kind, payload) { var p = progs.get(id); if (p) p(kind, payload); }
+  function ready(b) { bridge = b; waiting.splice(0).forEach(function (f) { f(); }); }
+  function whenReady(f) {
+    if (bridge) return f();
+    waiting.push(f);
+    if (starting) return;
+    starting = true;
+    if (DIRECT) startDirect(); else startRemote();
+  }
+  function reply(r, msg) { msg.t = TAG; try { r.src.postMessage(msg, r.origin && r.origin !== "null" ? r.origin : "*"); } catch (e) {} }
+  function startDirect() {
+    new QWebChannel(qt.webChannelTransport, function (ch) {
+      var o = ch.objects.nullVideo;
+      o.done.connect(function (id, ok, payload) {
+        var r = rel.get(id); if (r) { rel.delete(id); reply(r, { op: "done", id: r.id, ok: ok, payload: payload }); return; }
+        onDone(id, ok, payload);
+      });
+      o.progress.connect(function (id, kind, payload) {
+        var r = rel.get(id); if (r) { if (kind === "end" || kind === "error") rel.delete(id); reply(r, { op: "progress", id: r.id, kind: kind, payload: payload }); return; }
+        onProgress(id, kind, payload);
+      });
+      ready(o);
     });
-    bridge.progress.connect(function (id, kind, payload) { var p = progs.get(id); if (p) p(kind, payload); });
-    waiting.splice(0).forEach(function (f) { f(); });
-  });
-  function whenReady(f) { if (bridge) f(); else waiting.push(f); }
+  }
+  function startRemote() {
+    var up = window.top, alive = false;
+    window.addEventListener("message", function (e) {
+      var d = e.data; if (!d || d.t !== TAG || e.source !== up) return;
+      if (d.op === "hi" && !alive) {
+        alive = true;
+        ready({
+          mse: function (id, init, frag, v, a, ms) { up.postMessage({ t: TAG, op: "mse", id: id, init: init, frag: frag, v: v, a: a, ms: ms }, "*"); },
+          prog: function (id, url, ref, ua) { up.postMessage({ t: TAG, op: "prog", id: id, url: url, ref: ref, ua: ua }, "*"); },
+          cancel: function (id) { up.postMessage({ t: TAG, op: "cancel", id: id }, "*"); }
+        });
+      } else if (d.op === "done") onDone(d.id, d.ok, d.payload);
+      else if (d.op === "progress") onProgress(d.id, d.kind, d.payload);
+    });
+    try { up.postMessage({ t: TAG, op: "hello" }, "*"); } catch (e) {}
+    setTimeout(function () {                              // nobody answered: fail every request now instead of leaving the player hanging
+      if (alive) return;
+      ready({
+        mse: function (id) { setTimeout(function () { onDone(id, false, "no link to the browser from this frame"); }, 0); },
+        prog: function (id) { setTimeout(function () { onProgress(id, "error", "no link to the browser from this frame"); }, 0); },
+        cancel: function () {}
+      });
+    }, 2000);
+  }
+  if (IS_TOP) {                                           // answer frames
+    window.addEventListener("message", function (e) {
+      var d = e.data; if (!d || d.t !== TAG || e.source === window || typeof d.op !== "string") return;
+      var w = e.source, ok = false;
+      try { for (var n = 0; n < 32 && w; n++) { if (w === window.top) break; w = w.parent; if (w === window) { ok = true; break; } } } catch (x) {}
+      if (!ok) return;                                    // only frames of this very page may use the link
+      var r = { src: e.source, origin: e.origin, id: d.id };
+      if (d.op === "hello") { reply(r, { op: "hi" }); return; }
+      var map = relBy.get(e.source); if (!map) { map = new Map(); relBy.set(e.source, map); }
+      if (d.op === "cancel") { var g = map.get(d.id); if (g) { map.delete(d.id); rel.delete(g); whenReady(function () { try { bridge.cancel(g); } catch (x) {} }); } return; }
+      if (typeof d.id !== "number") return;
+      var gid = nextId++; map.set(d.id, gid); rel.set(gid, r);
+      if (d.op === "mse") {
+        whenReady(function () { bridge.mse(gid, String(d.init), String(d.frag), !!d.v, !!d.a, d.ms | 0); });
+      } else if (d.op === "prog") {
+        whenReady(function () { bridge.prog(gid, String(d.url), String(d.ref), String(d.ua)); });
+      }
+    });
+  }
 
   function b64(u8) {
     var s = "", n = 0x8000;

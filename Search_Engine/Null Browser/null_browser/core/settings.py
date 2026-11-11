@@ -56,6 +56,8 @@ DEFAULTS = {
     # performance
     "memory_saver": True,
     "memory_saver_minutes": 15,
+    "freeze_background_tabs": True,    # background tabs that are silent are paused after a few minutes and resume at once when selected
+    "preload_pages": True,             # let the engine look up / connect to sites a page links to ahead of the click (faster; needs a relaunch)
     "hardware_acceleration": True,
     "smooth_scrolling": True,
     "google_compat": True,             # present the Chrome brand to Google sign-in pages (engine/google_compat.py)
@@ -77,7 +79,7 @@ DEFAULTS = {
     "last_version": "",
 }
 
-RESTART_KEYS = {"hardware_acceleration", "remote_debugging_port", "save_site_data", "share_nothing"}
+RESTART_KEYS = {"hardware_acceleration", "remote_debugging_port", "save_site_data", "share_nothing", "preload_pages"}
 
 
 class Settings(QObject):

@@ -57,6 +57,19 @@ docs/VIDEO_CODECS.md          why some videos cannot play and what to do
 Rules the layout follows: `privacy/` and `engine/` never import `ui/`; mixins hold behaviour, the class they are mixed into holds
 state and signals; nothing in the request interceptor may block.
 
+## What is new in 3.1.2
+
+* **Video in embedded players.** The engine gives frames (the player inside an embedded X / Reddit / video-site frame) no line to the
+  browser, so those videos never reached the converter. `video/shim.js` now relays through the top document (postMessage, checked to
+  come from a frame of the same page). The bridge also opens its channel only when a video actually needs converting, so ordinary
+  pages and frames pay nothing, and a failed conversion is retried once with tolerant ffmpeg options.
+* **Less flicker.** The ad-hiding observer remembers every class / id it already reported, so busy feeds stop pinging the browser;
+  the idle poll is 4 s instead of 1.2 s. A web page's colour is remembered per site (`site-colors.json`: host and colour only), so
+  a dark site no longer flashes white while it loads.
+* **Less lag.** Silent background tabs are paused after 5 minutes (Settings -> Performance) and wake the moment they are selected.
+* **Connection defaults.** "Preload sites for faster clicks" (Settings -> Performance, on by default) lets the engine look up and connect
+  to linked sites ahead of the click; everything else under "Share nothing" (updates, telemetry, ad-privacy APIs, sync) stays off.
+
 ## What is new in 3.1
 
 **Look and feel**

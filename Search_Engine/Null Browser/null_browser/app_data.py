@@ -70,6 +70,8 @@ class BrowsingDataMixin:
             self.db.run("DELETE FROM downloads WHERE state<>'in_progress' AND started>=?", (start,))
             self.downloads.clear_finished() if not seconds else None
             self.downloads.changed.emit()
+        if set(types) & {"cache", "history", "cookies"}:
+            self.site_bg.clear()
         if "cache" in types:
             self.profile.clearHttpCache()
             if self._private_profile:
@@ -91,6 +93,11 @@ class BrowsingDataMixin:
     # ------------------------------------------------------------------ memory saver
     @crash.guarded(quiet=True)
     def memory_saver_tick(self):
+        if self.settings.get("freeze_background_tabs") is not False:
+            now = time.time()
+            for t in self.all_tabs():
+                if now - t.last_active > 300 and not t.frozen and not t.discarded:
+                    t.freeze()
         if not self.settings.get("memory_saver"):
             return
         limit = max(1, int(self.settings.get("memory_saver_minutes") or 15)) * 60

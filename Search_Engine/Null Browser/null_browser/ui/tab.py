@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, quote
 
 from PyQt6.QtCore import QBuffer, QIODevice, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QDesktopServices
-from PyQt6.QtWebEngineCore import QWebEngineLoadingInfo, QWebEnginePage, QWebEngineSettings
+from PyQt6.QtWebEngineCore import QWebEngineLoadingInfo, QWebEnginePage, QWebEngineScript, QWebEngineSettings
 from PyQt6.QtWidgets import (QLabel, QMessageBox, QSplitter, QVBoxLayout, QWidget)
 
 from ..constants import SCHEME
@@ -60,6 +60,7 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
         self.cert_failed = False
         self._last_history_url = ""
         self._upgraded = False
+        self.frozen = False
         self.lazy_url = ""                 # restored-session tab that has not been loaded yet
         self.lazy_title = ""
 
@@ -136,7 +137,8 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
         internal = u.isEmpty() or u.scheme() in (SCHEME, "about")
         if internal or (colors["dark"] and self.app.settings.get("web_dark_mode")):
             return QColor(colors["bar"])
-        return QColor("#ffffff")
+        remembered = None if self.private else self.app.site_bg.get(u.host())
+        return QColor(remembered) if remembered else QColor("#ffffff")
 
     def refresh_background(self, url=None):
         from . import enhance
@@ -186,10 +188,12 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
         self.lazy_url = ""
         self.page.load(url)
         self.last_active = time.time()
-        if self.discarded:
+        if self.discarded or self.frozen:
             self.activate()
 
     def reload(self, hard=False):
+        if self.frozen:
+            self.activate()
         u = self.real_url()
         if self.page.url().host() == "error" and self.page.url().scheme() == SCHEME and u.isValid():
             self.load(u)
@@ -211,12 +215,32 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
             self.discarded = False
             self.page.setLifecycleState(QWebEnginePage.LifecycleState.Active)
             self.titleChanged.emit(self)
+        elif self.frozen:
+            self.frozen = False
+            try:
+                self.page.setLifecycleState(QWebEnginePage.LifecycleState.Active)
+            except RuntimeError:
+                pass
+
+    def freeze(self):
+        """Pause a tab nobody is looking at (timers, scripts); selecting it again (activate) resumes it."""
+        try:
+            if self.page.isVisible() or self.discarded or self.frozen or self.loading or self.devtools is not None:
+                return False
+            if self.page.recentlyAudible() or self.page.url().scheme() not in ("http", "https"):
+                return False
+            self.page.setLifecycleState(QWebEnginePage.LifecycleState.Frozen)
+            self.frozen = True
+            return True
+        except Exception:
+            return False
 
     def discard(self):
         try:
             if self.page.isVisible() or self.discarded or self.is_internal() or self.devtools is not None:
                 return False
             self.page.setLifecycleState(QWebEnginePage.LifecycleState.Discarded)
+            self.frozen = False
             self.discarded = True
             self.titleChanged.emit(self)
             return True
@@ -347,11 +371,27 @@ class Tab(ContextMenuMixin, DevToolsMixin, PermissionsMixin, PageToolsMixin, QWi
                 self.app.db.add_visit(url.toString(), self.page.title(), typed)
             if ok and url.scheme() in ("http", "https") and getattr(self.app.adblock, "cosmetic", None) is not None:
                 self.app.adblock.cosmetic.after_load(self.page)
+            if ok and not self.private and url.scheme() in ("http", "https"):
+                self._remember_colour(url.host())
             if ok and url.host() == "newtab" and url.scheme() == SCHEME:
                 self.focusOmnibox.emit()
             self.securityChanged.emit()
         except Exception:
             crash.log.exception("load finished")
+
+    def _remember_colour(self, host):
+        """Read the page's colour once (a moment after load, when its theme is applied) so the next visit starts with it."""
+        from ..core import sitebg
+
+        def read():
+            try:
+                if self.page.url().host() != host or self.frozen:
+                    return
+                self.page.runJavaScript(sitebg.READ_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld,
+                                        lambda c: self.app.site_bg.put(host, c if isinstance(c, str) else ""))
+            except RuntimeError:
+                pass
+        QTimer.singleShot(1200, read)
 
     def on_render_terminated(self, status, code):
         try:
