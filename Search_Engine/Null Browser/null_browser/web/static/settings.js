@@ -128,7 +128,15 @@
     }
     draw();
     return [h("h1", {}, "VPN"),
-      card(switchRow("Send this browser's traffic through the VPN", V.enabled ? "On. Web pages, downloads, WebSockets and DNS lookups go through the server below. If the server stops answering, pages fail to load instead of using your real address." : "Off. Add a server, press Test, then turn this on.", V.enabled, async v => { try { const r = await api("vpn/enable", { on: v }); D.vpn = r; relaunch(v ? "Turn the VPN on?" : "Turn the VPN off?"); } catch (x) { toast(x.message || String(x), 4500); setTimeout(() => location.reload(), 300); } })),
+      card(switchRow("Send this browser's traffic through the VPN", V.enabled ? "On. Web pages, downloads, WebSockets and DNS lookups go through the server below. If the server stops answering, pages fail to load instead of using your real address." : "Off. Add a server, press Test, then turn this on.", V.enabled, async v => { try {
+          if (v && D.vpn.active) {                       // test first: a dead server would make every page fail after the restart
+            toast("Checking the server…", 6000);
+            const t = (await api("vpn/test", { id: D.vpn.active })).token;
+            let res = { done: false };
+            for (let i = 0; i < 40 && !res.done; i++) { await new Promise(ok => setTimeout(ok, 300)); res = await api("vpn/test_result", { token: t }); }
+            if (!res.ok && !(await confirmDialog("The VPN server didn't answer", (res.message || "No answer.") + " With the VPN on, pages will not load until it answers.", "Turn on anyway", true))) { location.reload(); return; }
+          }
+          const r = await api("vpn/enable", { on: v }); D.vpn = r; relaunch(v ? "Turn the VPN on?" : "Turn the VPN off?"); } catch (x) { toast(x.message || String(x), 4500); setTimeout(() => location.reload(), 300); } })),
       h("h2", {}, "Servers"), list,
       h("h2", {}, "What this VPN is"),
       card(h("div", { class: "row", style: "display:block" }, h("div", { class: "sub", style: "line-height:1.6" },

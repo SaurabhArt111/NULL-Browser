@@ -3,9 +3,11 @@
 (async function () {
   const d = await api("newtab/data");
   document.title = "New Tab";
-  const css = h("link", { rel: "stylesheet", href: "/_/newtab.css" });
-  document.head.append(css);
-  await new Promise(r => { css.onload = r; css.onerror = r; setTimeout(r, 900); });
+  if (!document.querySelector('link[href="/_/newtab.css"]')) {          // normally already in <head> (no unstyled flash)
+    const css = h("link", { rel: "stylesheet", href: "/_/newtab.css" });
+    document.head.append(css);
+    await new Promise(r => { css.onload = r; css.onerror = r; setTimeout(r, 900); });
+  }
 
   const GRADIENTS = [
     ["aurora", "linear-gradient(135deg,#0f2027,#203a43 45%,#2c5364)", "dark"], ["sunset", "linear-gradient(135deg,#ff7e5f,#feb47b)", "light"],

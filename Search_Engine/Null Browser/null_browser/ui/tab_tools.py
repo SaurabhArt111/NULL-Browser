@@ -52,7 +52,10 @@ class PageToolsMixin:
         if not path:
             return
         fmt = QWebEnginePage.SavePageFormat
-        self.page.save(path, fmt.CompleteHtmlSaveFormat if "complete" in flt else fmt.SingleHtmlSaveFormat if "only" in flt else fmt.MimeHtmlSaveFormat)
+        mhtml = "MHTML" in flt
+        if not os.path.splitext(path)[1]:                     # typed without an extension: add the one for the chosen format
+            path += ".mhtml" if mhtml else ".html"
+        self.page.save(path, fmt.MimeHtmlSaveFormat if mhtml else fmt.CompleteHtmlSaveFormat if "complete" in flt else fmt.SingleHtmlSaveFormat)
 
     def save_pdf(self):
         from PyQt6.QtWidgets import QFileDialog

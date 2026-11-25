@@ -113,8 +113,10 @@
     if (ix || iy) {
       st.fx -= ix; st.fy -= iy;
       var el = st.el;
-      if (el === document.scrollingElement || el === document.documentElement || el === document.body) window.scrollBy(ix, iy);
-      else { el.scrollLeft += ix; el.scrollTop += iy; }
+      // "instant": pages (and Null's own pages) that set `scroll-behavior: smooth` would otherwise start a new smooth
+      // animation every frame, which cancels the previous one - auto-scroll then crawled and stuttered.
+      if (el === document.scrollingElement || el === document.documentElement || el === document.body) window.scrollBy({ left: ix, top: iy, behavior: "instant" });
+      else el.scrollBy({ left: ix, top: iy, behavior: "instant" });
     }
     var d = dirOf(dx, dy, st.ax), key = d ? d.join(",") : "";
     if (key !== st.curDir) { st.curDir = key; setCursor(st.ax, d); }

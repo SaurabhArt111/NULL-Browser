@@ -18,9 +18,10 @@
     const q = query.toLowerCase();
     const items = all.filter(b => (!folder || b.folder === folder) && (!q || (b.title + " " + b.url).toLowerCase().includes(q)));
     if (!items.length) { card.append(h("div", { class: "empty" }, all.length ? "No bookmarks match" : "Bookmarks you add appear here. Press Ctrl+D on any page.")); return; }
-    items.forEach(b => card.append(h("div", { class: "row click", onclick: e => { if (!e.target.closest("button")) location.href = b.url; } }, favImg(b.url),
-      h("div", { class: "grow" }, h("div", { class: "title ellipsis" }, b.title || b.url), h("div", { class: "sub ellipsis" }, shortUrl(b.url))),
-      h("span", { class: "badge" }, b.folder),
+    items.forEach(b => card.append(h("div", { class: "row click" },
+      h("a", { class: "rowlink", href: b.url, title: b.url }, favImg(b.url),
+        h("div", { class: "grow" }, h("div", { class: "title ellipsis" }, b.title || b.url), h("div", { class: "sub ellipsis" }, shortUrl(b.url))),
+        h("span", { class: "badge" }, b.folder)),
       h("button", { class: "btn icon ghost", title: "Edit", html: icon("edit", "sm"), onclick: () => edit(b) }),
       h("button", { class: "btn icon ghost", title: "Delete", html: icon("trash", "sm"), onclick: async () => { await api("bookmarks/delete", { id: b.id }); toast("Bookmark deleted"); load(); } }))));
   }

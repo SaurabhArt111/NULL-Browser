@@ -1,12 +1,9 @@
 """BrowserApp: owns profiles, policies, windows, session and every shared service."""
-import json
 import logging
 import os
 import platform
-import re
 
 from PyQt6.QtCore import QObject, QTimer, QUrl, QT_VERSION_STR, PYQT_VERSION_STR, Qt, pyqtSignal
-from PyQt6.QtNetwork import QLocalSocket
 from PyQt6.QtWebEngineCore import (QWebEnginePage, QWebEngineSettings, qWebEngineChromiumVersion)
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 
@@ -18,7 +15,7 @@ from .app_pwa import PwaMixin
 from .app_instances import SingleInstanceMixin
 from .app_policies import PoliciesMixin
 from .app_profiles import ProfilesMixin
-from .app_session import SessionMixin
+from .app_session import SessionMixin, forward_to_running_instance, ipc_name  # noqa: F401  (main.py imports them from here)
 from .core import crash, paths
 from .privacy.cookies import CookiePolicy
 from .privacy.interceptor import AdBlocker
@@ -39,29 +36,6 @@ log = logging.getLogger("null.app")
 WA = QWebEngineSettings.WebAttribute
 
 
-def ipc_name():
-    import getpass
-    import hashlib
-    try:
-        user = getpass.getuser()
-    except Exception:
-        user = "user"
-    tag = hashlib.sha1(paths.data_dir().encode()).hexdigest()[:8]
-    return f"NullBrowser-{re.sub(r'[^A-Za-z0-9_-]', '_', user)}-{tag}"
-
-
-def forward_to_running_instance(urls, private, app_id=None):
-    """If another Null Browser is already running on this profile, hand it the URLs and return True."""
-    sock = QLocalSocket()
-    sock.connectToServer(ipc_name())
-    if not sock.waitForConnected(400):
-        return False
-    sock.write(json.dumps({"urls": urls, "private": private, "app": app_id}).encode() + b"\n")
-    sock.waitForBytesWritten(1000)
-    sock.disconnectFromServer()
-    return True
-
-
 class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin, BrowsingDataMixin, AccountsMixin, PwaMixin, InternalPagesMixin, QObject):
     """Application object: owns the shared services and the windows. Profiles, session, policies, IPC and data clearing are mixins (app_*.py)."""
     themeChanged = pyqtSignal()
@@ -74,7 +48,7 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         self.safe = safe_mode
         self.windows = []
         self.cert_allow = set()
-        self.closed_tabs = []                 # recently closed tabs (url, title) across windows
+        self.closed = []                      # recently closed tabs / windows (app_session.py), newest last
         self._shutting_down = False
         self._private_profile = None
         self._icon_cache = {}
@@ -205,6 +179,8 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         self.quit()
 
     def window_closing(self, win):
+        if not self._shutting_down and win in self.windows:
+            self.remember_closed_window(win)                 # Ctrl+Shift+T brings the whole window back
         if win in self.windows:
             self.windows.remove(win)
         if not win.private:
@@ -225,7 +201,7 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         elif show:
             w.add_tab("null://newtab")
         if show:
-            w.show()
+            w.show_initial()
             w.raise_()
             w.activateWindow()
         return w
@@ -267,6 +243,7 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
         if self.settings.get("autostart_null_search"):
             QTimer.singleShot(400, self.engine.start)
         mode = self.settings.get("startup_mode")
+        previous = self.read_session()
         restored = False
         if urls or private:
             self.new_window(private=private, url=urls[0] if urls else None)
@@ -279,6 +256,8 @@ class BrowserApp(ProfilesMixin, SessionMixin, PoliciesMixin, SingleInstanceMixin
             self.new_window(url=su[0])
             for u in su[1:]:
                 self.windows[-1].add_tab(u)
+        # Ctrl+Shift+T after a restart: the previous run's windows are the newest "recently closed" entries (unless restored)
+        self.init_closed(None if restored else previous)
         if not self.windows:
             self.new_window()
         w = self.windows[0]

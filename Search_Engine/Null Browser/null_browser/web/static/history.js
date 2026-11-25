@@ -23,10 +23,11 @@
     for (const r of rows) {
       const day = dayLabel(r.ts);
       if (day !== lastDay) { card.append(h("div", { class: "day" }, day)); lastDay = day; }
-      card.append(h("div", { class: "row click", onclick: e => { if (!e.target.closest("input,button")) location.href = r.url; } },
+      card.append(h("div", { class: "row click" },
         h("input", { type: "checkbox", checked: selected.has(r.id), onchange: e => { e.target.checked ? selected.add(r.id) : selected.delete(r.id); renderBar(); } }),
-        h("span", { class: "muted", style: "width:62px;font-size:12px" }, fmtTime(r.ts)), favImg(r.url),
-        h("div", { class: "grow" }, h("div", { class: "title ellipsis" }, r.title || shortUrl(r.url)), h("div", { class: "sub ellipsis" }, shortUrl(r.url))),
+        h("a", { class: "rowlink", href: r.url, title: r.url, draggable: "true" },
+          h("span", { class: "muted", style: "width:62px;font-size:12px;flex:none" }, fmtTime(r.ts)), favImg(r.url),
+          h("div", { class: "grow" }, h("div", { class: "title ellipsis" }, r.title || shortUrl(r.url)), h("div", { class: "sub ellipsis" }, shortUrl(r.url)))),
         h("button", { class: "btn icon ghost", title: "Remove from history", html: icon("x", "sm"), onclick: async () => { await api("history/delete", { ids: [r.id] }); rows = rows.filter(x => x.id !== r.id); render(); } })));
     }
     more.style.display = done ? "none" : "block"; renderBar();

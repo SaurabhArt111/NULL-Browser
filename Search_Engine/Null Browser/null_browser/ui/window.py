@@ -34,13 +34,12 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.app, self.private = app, private
         self.profile = app.profile_for(private)           # creates the off-the-record profile on first use
-        self.closed_tabs = []                 # (url, index, pinned) most recent last
         self.fullscreen_tab = False
         self._session_timer = QTimer(self, singleShot=True, interval=700, timeout=lambda: app.save_session())
         self.setWindowTitle(APP_NAME + (" (InPrivate)" if private else ""))
         self.setWindowIcon(icons.app_icon())
-        self.resize(1280, 840)
         self.setMinimumSize(520, 360)
+        self._start_maximized = self._initial_geometry()
         self.setAcceptDrops(True)
         # Merged title bar: the OS caption is removed and the tab strip + window buttons do its job (like Chrome).
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowMinimizeButtonHint
@@ -164,7 +163,6 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         v.addWidget(self.stack, 1)
         self.tabs = []                            # widgets in tab order (mirrors tabbar)
 
-        self._spin_timer = QTimer(self, interval=90, timeout=self._spin)
         self._build_actions()
         self.restyle()
         app.themeChanged.connect(self.restyle)
@@ -212,11 +210,62 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
     # names used by BrowserApp
     current_tab = current
 
+    # ---- window size / position ---------------------------------------------------------------------------
+    def _initial_geometry(self, saved=None):
+        """Size a new window like the last one the user closed (or a comfortable share of the screen), cascaded so it
+        never sits exactly on top of another window, and always fully on a screen. Returns True if it should open maximised."""
+        from PyQt6.QtCore import QRect
+        from PyQt6.QtGui import QCursor, QGuiApplication
+        saved = saved if saved is not None else (self.app.settings.get("last_window") or {})
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else QRect(0, 0, 1366, 768)
+        geo = saved.get("geometry") if isinstance(saved, dict) else None
+        if isinstance(geo, list) and len(geo) == 4 and all(isinstance(v, int) for v in geo):
+            r = QRect(*geo)
+            if not any(sc.availableGeometry().intersects(r) for sc in QGuiApplication.screens()):
+                r.moveCenter(avail.center())
+        else:
+            w = min(1280, int(avail.width() * 0.86))
+            h = min(860, int(avail.height() * 0.9))
+            r = QRect(0, 0, w, h)
+            r.moveCenter(avail.center())
+        others = [x for x in self.app.windows if x is not self and x.isVisible() and not x.isMaximized()]
+        for _ in range(12):                                   # cascade like Windows does
+            if not any(abs(o.x() - r.x()) < 8 and abs(o.y() - r.y()) < 8 for o in others):
+                break
+            r.translate(28, 28)
+        target = next((sc.availableGeometry() for sc in QGuiApplication.screens() if sc.availableGeometry().intersects(r)), avail)
+        r.setWidth(min(r.width(), target.width()))
+        r.setHeight(min(r.height(), target.height()))
+        if r.right() > target.right():
+            r.moveRight(target.right())
+        if r.bottom() > target.bottom():
+            r.moveBottom(target.bottom())
+        r.moveLeft(max(r.left(), target.left()))
+        r.moveTop(max(r.top(), target.top()))
+        self.setGeometry(r)
+        return bool(isinstance(saved, dict) and saved.get("maximized"))
+
+    def geometry_state(self):
+        g = self.normalGeometry() if (self.isMaximized() or self.isFullScreen()) else self.geometry()
+        if not g.isValid() or g.width() < 100:
+            g = self.geometry()
+        return {"geometry": [g.x(), g.y(), g.width(), g.height()], "maximized": bool(self.isMaximized())}
+
+    def show_initial(self):
+        """First show: maximised if that is how the window was left."""
+        if self._start_maximized:
+            self.showMaximized()
+        else:
+            self.show()
+
     def add_tab(self, url=None, background=False):
         return self.new_tab(url, background=background)
 
     def restore_state(self, ws):
         """Recreate tabs from a saved session. Only the selected tab loads now; the rest load when first shown."""
+        if isinstance(ws.get("geometry"), list):
+            self._start_maximized = self._initial_geometry({"geometry": ws["geometry"], "maximized": ws.get("maximized")})
         entries = [e for e in ws.get("tabs", []) if isinstance(e, dict) and e.get("url")]
         cur = ws.get("current", 0)
         cur = cur if isinstance(cur, int) and 0 <= cur < len(entries) else 0
@@ -305,7 +354,7 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         self.home_btn.setVisible(bool(s.get("show_home_button")))
 
     # ===================================================================== tabs
-    def new_tab(self, url=None, background=False, index=None, request=None, pinned=False, focus_omnibox=True, lazy=None):
+    def new_tab(self, url=None, background=False, index=None, request=None, pinned=False, focus_omnibox=True, lazy=None, history=None):
         try:
             tab = Tab(self.app, self.profile, self.private)
             tab.pinned = pinned
@@ -322,6 +371,10 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
                 self._tab_title(tab)
             elif request is not None:
                 request.openIn(tab.page)
+            elif history:                                    # reopened tab: back / forward list comes back too
+                from ..app_session import load_history
+                if not load_history(tab.page, history):
+                    tab.load(url or f"{SCHEME}://newtab")
             elif url:
                 tab.load(url)
             else:
@@ -371,10 +424,8 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         i = self.index_of(tab)
         if i < 0:
             return
-        url = tab.real_url().toString()
-        if not self.private and url and not url.startswith(f"{SCHEME}://newtab") and tab.page.url().scheme() != "about":
-            self.closed_tabs.append((url, i, tab.pinned))
-            del self.closed_tabs[:-25]
+        if len(self.tabs) > 1:
+            self.app.remember_closed_tab(tab, i)            # the last tab is remembered as part of the window (Chrome does the same)
         if len(self.tabs) == 1:
             self.close()                                  # closing the last tab closes the window
             return
@@ -386,18 +437,14 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         self.stack.removeWidget(tab)
         tab.cleanup()
         tab.deleteLater()
-        self.tabbar.clear_loading()
-        for t in self.tabs:
-            if t.loading:
-                self.tabbar.set_loading(self.index_of(t), True)
         if was_current:
             self._current_changed(self.tabbar.currentIndex())
         self._schedule_session()
 
     def reopen_closed_tab(self):
-        if self.closed_tabs:
-            url, i, pinned = self.closed_tabs.pop()
-            self.new_tab(url, index=i, pinned=pinned)
+        """Ctrl+Shift+T: the newest closed tab - or closed window, also from before the browser was restarted."""
+        if self.app.reopen_closed(self) is None:
+            self.show_toast("Nothing to reopen", 1800)
 
     def _current_changed(self, i):
         if not (0 <= i < len(self.tabs)):
@@ -470,9 +517,6 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
     def _tab_security(self, tab):
         if tab is self.current():
             self.update_security()
-
-    def _spin(self):
-        pass
 
     # ===================================================================== chrome state
     def _sync_chrome(self):
@@ -642,7 +686,7 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         DownloadsPopup(self).show_under(self.dl_btn, align_right=True)
 
     def _downloads_changed(self):
-        self.dl_btn.setVisible(bool(self.app.downloads.list()))
+        self.dl_btn.setVisible(self.app.downloads.has_any())
         n = self.app.downloads.active_count()
         tip(self.dl_btn, "Downloads", f"{n} download{'s' if n != 1 else ''} in progress" if n else "See files you have downloaded", "Ctrl+J")
 
@@ -702,6 +746,8 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
         add("Ctrl+Tab|Ctrl+PgDown", lambda: self.cycle(1))
         add("Ctrl+Shift+Tab|Ctrl+PgUp", lambda: self.cycle(-1))
         add("Ctrl+Shift+A", self.tab_search_menu)
+        add("Ctrl+Shift+PgUp", lambda: self.move_current_tab(-1))
+        add("Ctrl+Shift+PgDown", lambda: self.move_current_tab(1))
         add("Ctrl+Shift+M", lambda: self._toggle_mute_index(self.tabbar.currentIndex()))
         for n in range(1, 9):
             add(f"Ctrl+{n}|Alt+{n}", lambda n=n: self.tabbar.setCurrentIndex(min(n - 1, len(self.tabs) - 1)))
@@ -715,6 +761,13 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
             t.find.close_bar()
         elif t and t.loading:
             t.stop()
+
+    def move_current_tab(self, d):
+        """Ctrl+Shift+PgUp / PgDn: move the selected tab left / right (inside its pinned / unpinned group)."""
+        i = self.tabbar.currentIndex()
+        j = i + d
+        if 0 <= i < len(self.tabs) and 0 <= j < len(self.tabs) and self.tabbar.is_pinned(i) == self.tabbar.is_pinned(j):
+            self.tabbar.moveTab(i, j)
 
     def cycle(self, d):
         if self.tabs:
@@ -740,11 +793,13 @@ class MainWindow(WindowAppsMixin, BookmarksBarMixin, WindowFrameMixin, TabTransf
             self._session_timer.start()
 
     def session_state(self):
-        return {"private": self.private, "current": max(0, self.tabbar.currentIndex()),
+        return {"private": self.private, "current": max(0, self.tabbar.currentIndex()), **self.geometry_state(),
                 "tabs": [t.session_entry() for t in self.tabs if t.real_url().toString() and t.real_url().scheme() != "about"]}
 
     def closeEvent(self, ev):
         try:
+            if not self.private and self.tabs:
+                self.app.settings.set("last_window", self.geometry_state(), silent=True)
             self.app.window_closing(self)
             for t in self.tabs:
                 t.cleanup()

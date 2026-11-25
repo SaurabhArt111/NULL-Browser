@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMenu, QToolButton, QWidget, Q
 from ..constants import SCHEME
 from ..core import crash
 from .tips import tip
+from .window_bookmarks import BookmarkMenu
 
 
 class MenusMixin:
@@ -80,9 +81,11 @@ class MenusMixin:
         if not items:
             return
         btn = self.back_btn if direction < 0 else self.fwd_btn
-        m = QMenu(self)
+        m = BookmarkMenu(self)                      # middle-click an entry: open it in a background tab, menu stays open
+        m.middleClickedAction.connect(lambda a: self.new_tab(a.data(), background=True))
         for n, it in enumerate(items, 1):
             a = m.addAction(self._fav_icon(it.url().toString()), (it.title() or it.url().toString())[:70])
+            a.setData(it.url().toString())
             a.triggered.connect(lambda _=False, k=n * direction: self.history_open(k))
         m.exec(btn.mapToGlobal(QPoint(0, btn.height() + 2)))
         m.deleteLater()
@@ -108,11 +111,54 @@ class MenusMixin:
             h.goToItem(items[i])
 
     def tab_search_menu(self):
-        m = QMenu(self)
+        m = BookmarkMenu(self)                      # middle-click an entry closes that tab (like Chrome's tab search)
+        by_id = {}
+
+        def middle(a):
+            t = by_id.get(a.data())
+            if t is not None and t in self.tabs:
+                self.close_tab(t)
+                m.removeAction(a)
+                if not self.tabs or m.isEmpty():
+                    m.close()
+        m.middleClickedAction.connect(middle)
         for i, t in enumerate(self.tabs):
             a = m.addAction(self.tabbar.tabIcon(i), (t.title() or "Tab")[:60])
-            a.triggered.connect(lambda _=False, k=i: self.tabbar.setCurrentIndex(k))
+            by_id[str(id(t))] = t
+            a.setData(str(id(t)))
+            a.triggered.connect(lambda _=False, tab=t: tab in self.tabs and self.tabbar.setCurrentIndex(self.index_of(tab)))
         m.exec(self.tabsearch_btn.mapToGlobal(QPoint(0, self.tabsearch_btn.height() + 4)))
+        m.deleteLater()
+
+    def build_recent_menu(self, parent):
+        """History > Recently closed: tabs and whole windows (also from before a restart). Middle-click keeps the menu open."""
+        entries = list(enumerate(getattr(self.app, "closed", [])))[::-1][:12]
+        rm = BookmarkMenu("Recently closed", parent)
+        rm.setIcon(self.icon("history"))
+        parent.addMenu(rm)
+        if not entries:
+            rm.addAction("Nothing closed yet").setEnabled(False)
+            return rm
+
+        def reopen(k):
+            self.app.reopen_closed(self, k)
+        for k, e in entries:
+            if e.get("kind") == "window":
+                tabs = e.get("state", {}).get("tabs", [])
+                a = rm.addAction(self.icon("external", size=16), f"Window - {len(tabs)} tab{'s' if len(tabs) != 1 else ''}"
+                                 + (f": {tabs[0].get('title') or tabs[0].get('url')}"[:60] if tabs else ""))
+            else:
+                a = rm.addAction(self._fav_icon(e.get("url", "")), (e.get("title") or e.get("url") or "Tab")[:60])
+            a.setData(str(k))
+            a.triggered.connect(lambda _=False, k=k: reopen(k))
+            if len(entries) and k == entries[0][0]:
+                a.setText(a.text() + "\tCtrl+Shift+T")
+
+        def middle(a):                              # indexes shift once one entry is gone: reopen, then close the menu
+            reopen(int(a.data()))
+            rm.close()
+        rm.middleClickedAction.connect(middle)
+        return rm
 
     def show_main_menu(self):
         t = self.current()
@@ -122,10 +168,17 @@ class MenusMixin:
         A("New window", lambda: self.app.open_window(None, False), "Ctrl+N")
         A("New InPrivate window", lambda: self.app.open_window(None, True), "Ctrl+Shift+N", "eye_off")
         m.addSeparator()
-        A("History", lambda: self.open_url(f"{SCHEME}://history"), "Ctrl+H", "history")
+        hm = m.addMenu(self.icon("history"), "History")
+        A("History", lambda: self.open_url(f"{SCHEME}://history"), "Ctrl+H", "history", hm)
+        A("Reopen closed tab", self.reopen_closed_tab, "Ctrl+Shift+T", None, hm).setEnabled(bool(getattr(self.app, "closed", None)))
+        hm.addSeparator()
+        self.build_recent_menu(hm)
         A("Downloads", lambda: self.open_url(f"{SCHEME}://downloads"), "Ctrl+J", "download")
         self.build_apps_menu(m)
-        bm = m.addMenu(self.icon("bookmark"), "Bookmarks")
+        bm = BookmarkMenu("Bookmarks", m)
+        bm.setIcon(self.icon("bookmark"))
+        bm.middleClickedAction.connect(lambda a: self.open_url(a.data(), background=True))
+        m.addMenu(bm)
         A("Bookmark this tab…", self.toggle_bookmark, "Ctrl+D", "star", bm)
         A("Show bookmarks bar", lambda: self.app.settings.set("show_bookmarks_bar", not self.app.settings.get("show_bookmarks_bar")), "Ctrl+Shift+B", None, bm).setCheckable(True)
         bm.actions()[-1].setChecked(bool(self.app.settings.get("show_bookmarks_bar")))
@@ -133,6 +186,7 @@ class MenusMixin:
         bm.addSeparator()
         for b in self.app.db.bookmarks()[:15]:
             a = bm.addAction(self._fav_icon(b["url"]), (b["title"] or b["url"])[:50])
+            a.setData(b["url"])
             a.triggered.connect(lambda _=False, u=b["url"]: self.open_url(u, new_tab=False))
         m.addSeparator()
         zw = QWidgetAction(m)

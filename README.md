@@ -23,7 +23,40 @@ setup counts a warning and the browser still starts. If something misbehaves, ru
 Command line: `main.py [URL ...] [--private] [--safe-mode] [--data-dir DIR] [--debug] [--new-instance] [--wait-pid PID]`.
 `--data-dir` gives a portable profile.
 
-## What's new in this update
+## What's new in 3.2.0
+
+**Speed and flicker**
+- The tab strip no longer re-lays-out every tab 12 times a second while a page loads: the spinner is painted in place (only the icon repaints), tab sizes are cached, and the loading state now follows a tab when it is moved or dragged.
+- Download progress used to fire a database query + a file check for 500 rows in every window for every received chunk. Progress is now coalesced to 4 updates a second and the toolbar uses a cached check.
+- Built-in pages: the fade-in on every load is gone, the New Tab style sheet is in `<head>` (no unstyled flash), the permanent useless scrollbar is fixed, and the Downloads page only redraws when something changed.
+- The Python thread switch interval went from 1 ms back to 3 ms (1 ms made the UI thread hand the GIL over constantly).
+
+**Middle-click everywhere**
+- Auto-scroll now works on History, Settings, Downloads, Bookmarks etc. (it crawled there because those pages use smooth scrolling).
+- History, Bookmarks and Downloads entries are real links: middle-click / Ctrl+click opens a new tab, right-click offers "Open link in new tab".
+- Middle-click also works on: omnibox suggestions (new tab), Back/Forward lists (background tab), the Bookmarks menu, Recently closed, tab search (closes the tab), and empty tab-strip space (new tab, also on the native Windows caption area).
+
+**Ctrl+Shift+T after closing the browser**
+- Closed tabs and closed windows are one shared list saved to `closed.json`. After a restart, Ctrl+Shift+T first brings back the windows of the last run, then older tabs. Reopened tabs get their back/forward history back. New: Menu > History > Recently closed.
+
+**Downloads**
+- Files get the right extension from their type (`report` -> `report.pdf`, `download.php` -> `download.pdf`), `%20`-style names are decoded, Windows-forbidden characters and reserved names (CON, NUL...) are fixed.
+- Unfinished files are named `file.ext.part` and renamed when complete (setting `download_part_files`). "Save page as" adds `.html` / `.mhtml` when you type a name without one.
+
+**Window and tabs**
+- Caption buttons are now Windows 11's own: Segoe Fluent Icons / MDL2 glyphs, 46x32, red close #C42B1C, dimmed when the window is inactive.
+- Windows remember size, position and maximised state (per window in the session, and new windows open like the last closed one, cascaded, always on screen).
+- Dragging a tab out: the new window appears under the pointer and fades in (no jump). Closing tabs with the mouse keeps tab widths until the pointer leaves the strip (like Chrome). Ctrl+Shift+PgUp / PgDn moves the selected tab.
+
+**VPN**
+- DNS leak protection: with the VPN on, every local DNS lookup except the proxy itself and localhost is refused (the Tor Browser rule), QUIC and DNS prefetch are off. Pages still load through the proxy (tested end to end).
+- Turning the VPN on tests the server first and warns if it does not answer; the toolbar VPN menu has "Test connection".
+
+**Native build and clean-up**
+- `native\build_native.bat` checks for Rust + the MSVC build tools with clear messages, builds with `--locked`, strip and x86-64-v2 tuning (`NULL_NATIVE_CPU=native` for your CPU only), tests the new module before swapping it in, and keeps the old one if anything fails.
+- The stray `native\Privacy` file was created by an unescaped `->` in that script's last `echo`; fixed and removed. Duplicate `run_browser1.bat` / `run_null_browser1.bat`, the Rust build cache and dead code are gone.
+
+## Earlier update
 
 **Performance / flicker update.** The code was reorganised (`privacy/`, `engine/`, and `ui/`, `app` split into focused modules; see `Search_Engine/Null Browser/README.md`),
 the colour veil on tab switches and the load bar's page resize were removed, the ad blocker's scriptlets are cleaned up before any engine builds (fewer, safer, scoped; configurable in

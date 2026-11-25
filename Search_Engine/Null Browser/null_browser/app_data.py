@@ -69,6 +69,7 @@ class BrowsingDataMixin:
         if "downloads" in types:
             self.db.run("DELETE FROM downloads WHERE state<>'in_progress' AND started>=?", (start,))
             self.downloads.clear_finished() if not seconds else None
+            self.downloads._any = None
             self.downloads.changed.emit()
         if set(types) & {"cache", "history", "cookies"}:
             self.site_bg.clear()

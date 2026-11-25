@@ -20,7 +20,8 @@
       card.append(h("div", { class: "row" }, h("span", { html: icon("file") }),
         h("div", { class: "grow" },
           h("div", { class: "title ellipsis" }, missing ? h("s", {}, d.filename) : d.filename),
-          h("div", { class: "sub ellipsis" }, active ? `${fmtBytes(d.received)}${d.total > 0 ? " of " + fmtBytes(d.total) : ""}${d.paused ? " - paused" : ""}` : (missing ? "File moved or deleted - " : "") + shortUrl(d.url)),
+          h("div", { class: "sub ellipsis" }, active ? `${fmtBytes(d.received)}${d.total > 0 ? " of " + fmtBytes(d.total) : ""}${d.paused ? " - paused" : ""}` :
+            [missing ? "File moved or deleted - " : "", /^https?:/.test(d.url) ? h("a", { href: d.url, title: d.url, style: "color:inherit" }, shortUrl(d.url)) : shortUrl(d.url)]),
           active ? h("div", { class: "progress" }, h("i", { style: `width:${d.total > 0 ? pct : 100}%;${d.total > 0 ? "" : "opacity:.4"}` })) : ""),
         h("span", { class: "badge " + cls }, txt),
         active ? [h("button", { class: "btn icon ghost", title: d.paused ? "Resume" : "Pause", html: icon(d.paused ? "play" : "pause", "sm"), onclick: () => act(d.paused ? "resume" : "pause", d) }),
@@ -31,6 +32,15 @@
     }
   }
   async function act(a, d) { await api("downloads/" + a, { id: d.id }); load(); }
-  async function load() { items = (await api("downloads/list")).items; render(); }
-  load(); setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 1000);
+  // Only redraw when something changed (redrawing every second made the list flicker and lost hover / selection),
+  // and poll quickly only while a download is running.
+  let last = "", timer = 0;
+  async function load() {
+    const next = (await api("downloads/list")).items, sig = JSON.stringify(next);
+    if (sig !== last) { last = sig; items = next; render(); }
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (!document.hidden) load().catch(() => {}); else load.pending = true; }, items.some(d => d.state === "in_progress") ? 700 : 4000);
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && load.pending) { load.pending = false; load().catch(() => {}); } });
+  load();
 })();

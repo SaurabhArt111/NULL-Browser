@@ -114,6 +114,7 @@ def run_ext(S, app, w, base, outdir):
     run_ext2(S, app, w, base, outdir)
     run_ext3(S, app, w, base, outdir)
     run_ext4(S, app, w, base, outdir)
+    run_ext5(S, app, w, base, outdir)
 
 
 # ======================================================================================================================
@@ -468,3 +469,101 @@ def run_ext4(S, app, w, base, outdir):
     ok("the script is only installed for Google hosts by default", "google" in google_compat.HOSTS_REGEX and not google_compat.is_google_host("127.0.0.1"))
     ok("the interceptor sends the Chrome brand only when the setting is on", (app.adblock.client_hints is not None) == bool(app.settings.get("google_compat")))
     w.close_tab(t)
+
+
+def run_ext5(S, app, w, base, outdir):
+    """Middle-click on built-in pages, persistent Ctrl+Shift+T, download names, tab strip state."""
+    import json
+    import os
+    from PyQt6.QtWebEngineCore import QWebEngineScript
+    APP = QWebEngineScript.ScriptWorldId.ApplicationWorld
+    ok, js, load, wait_until = S.ok, S.js, S.load, S.wait_until
+
+    def appjs(t, code):
+        box = {}
+        t.page.runJavaScript(code, APP, lambda r: box.setdefault("r", r))
+        wait_until(lambda: "r" in box, 4000)
+        return box.get("r")
+
+    # ---- auto-scroll works on Null's own pages too (they use `scroll-behavior: smooth`) ----------------------------------
+    for i in range(60):
+        app.db.add_visit(f"{base}/short.html?n={i}", f"Visit {i}", False)
+    t = w.new_tab("null://history")
+    wait_until(lambda: t.page.url().host() == "history" and not t.loading, 8000)
+    QTest.qWait(900)
+    ok("auto-scroll script runs on null:// pages", appjs(t, "window.__nullAutoscroll === true") is True)
+    links = js(t, "document.querySelectorAll('.card a.rowlink[href]').length") or 0
+    ok("history entries are real links (middle-click / Ctrl+click open a new tab)", links >= 10, str(links))
+    can = js(t, "document.scrollingElement.scrollHeight > innerHeight + 50")
+    if can:
+        appjs(t, """var x=innerWidth-30,y=Math.round(innerHeight/2),tg=document.elementFromPoint(x,y);
+                 tg.dispatchEvent(new MouseEvent('mousedown',{button:1,clientX:x,clientY:y,bubbles:true,cancelable:true}));
+                 tg.dispatchEvent(new MouseEvent('mouseup',{button:1,clientX:x,clientY:y,bubbles:true,cancelable:true}));
+                 window.dispatchEvent(new MouseEvent('mousemove',{clientX:x,clientY:y+220,bubbles:true})); 0""")
+        QTest.qWait(700)
+        y = js(t, "scrollY") or 0
+        ok("middle-click auto-scroll scrolls the History page", y > 120, f"scrollY={y}")
+        appjs(t, "document.body.dispatchEvent(new MouseEvent('mousedown',{button:0,clientX:5,clientY:5,bubbles:true,cancelable:true})); 0")
+    else:
+        ok("middle-click auto-scroll scrolls the History page", False, "page did not overflow")
+    w.close_tab(t)
+
+    # ---- Ctrl+Shift+T survives a restart ------------------------------------------------------------------------------
+    t = w.new_tab(base + "/short.html?closed=1")
+    wait_until(lambda: "closed=1" in t.page.url().toString() and not t.loading, 6000)
+    QTest.qWait(200)
+    w.close_tab(t)
+    path = os.path.join(os.path.dirname(app._session_file()), "closed.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        saved = []
+    ok("closed tabs are saved to disk", any("closed=1" in (e.get("url") or "") for e in saved), str(len(saved)))
+    ok("a closed tab keeps its back / forward history", bool(saved and saved[-1].get("history")))
+    prev = {"windows": [{"current": 0, "tabs": [{"url": base + "/short.html?prev=1", "title": "Prev"},
+                                                 {"url": base + "/short.html?prev=2", "title": "Prev 2"}]}]}
+    app.init_closed(prev)                                       # what start() does after a restart that did not restore tabs
+    ok("the previous run's window is offered first after a restart", app.closed and app.closed[-1].get("kind") == "window")
+    n_windows = len(app.windows)
+    nw = app.reopen_closed(w)
+    QTest.qWait(400)
+    ok("Ctrl+Shift+T after a restart brings that window back", len(app.windows) == n_windows + 1 and nw is not None and len(nw.tabs) == 2,
+       f"{len(app.windows)} windows")
+    if nw is not None:
+        nw.close()
+        QTest.qWait(300)
+        ok("closing a window puts it on the reopen list", app.closed and app.closed[-1].get("kind") == "window")
+    t2 = app.reopen_closed(w)                                  # reopen that window again ...
+    QTest.qWait(300)
+    if t2 is not None and hasattr(t2, "close"):
+        t2.close()
+        QTest.qWait(200)
+    while app.closed and app.closed[-1].get("kind") == "window":
+        app.closed.pop()
+    tab = app.reopen_closed(w)
+    QTest.qWait(500)
+    ok("the closed tab reopens with its history", tab is not None and tab in w.tabs and tab.page.history().count() >= 1)
+    if tab is not None and tab in w.tabs:
+        w.close_tab(tab)
+
+    # ---- download names -------------------------------------------------------------------------------------------------
+    from .core.downloads import fix_name
+    ok("a download without an extension gets one from its type", fix_name("report", "application/pdf") == "report.pdf")
+    ok("an existing matching extension is kept", fix_name("photo.JPG", "image/jpeg") == "photo.JPG")
+    ok("Windows-reserved characters are replaced", fix_name('a<b>:c?.txt', "text/plain") == "a_b__c_.txt")
+    ok("percent-encoded names are decoded", fix_name("My%20File.zip", "application/zip") == "My File.zip")
+    ok("reserved device names are avoided", fix_name("CON.txt", "text/plain") != "CON.txt")
+
+    # ---- tab strip: loading state moves with its tab ----------------------------------------------------------------------
+    a = w.new_tab(base + "/short.html?a=1", background=True)
+    b = w.new_tab(base + "/short.html?b=1", background=True)
+    QTest.qWait(600)
+    ia, ib = w.index_of(a), w.index_of(b)
+    w.tabbar.set_loading(ia, True)
+    w.tabbar.moveTab(ia, ib)
+    ok("the loading spinner follows a moved tab", w.tabbar._meta(ib).get("loading") and not w.tabbar._meta(ia).get("loading"))
+    w.tabbar.clear_loading()
+    for x in (a, b):
+        if x in w.tabs:
+            w.close_tab(x)

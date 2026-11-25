@@ -26,10 +26,6 @@ class TabTransferMixin:
             except TypeError:
                 pass
         tab.hide()
-        self.tabbar.clear_loading()
-        for t in self.tabs:
-            if t.loading:
-                self.tabbar.set_loading(self.index_of(t), True)
         if self.tabs and was_current:
             self._current_changed(self.tabbar.currentIndex())
         self._schedule_session()
@@ -62,10 +58,14 @@ class TabTransferMixin:
         w = self.app.new_window(private=self.private, show=False, empty=True)
         w.resize(self.size() if not self.isMaximized() else self.normalGeometry().size())
         w.adopt_tab(tab)
+        w._start_maximized = False
         w.move(self.pos() + QPoint(40, 40))
+        from .tabdrag import fade
+        w.setWindowOpacity(0.0)
         w.show()
         w.raise_()
         w.activateWindow()
+        fade(w, 1.0, 160)
 
     def drop_hint_index(self, global_pos):
         x = self.tabbar.mapFromGlobal(global_pos).x()

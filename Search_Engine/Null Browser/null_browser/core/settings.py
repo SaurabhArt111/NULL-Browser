@@ -51,6 +51,8 @@ DEFAULTS = {
     # downloads
     "download_dir": "",
     "ask_download_location": False,
+    "download_part_files": True,       # unfinished downloads are named "file.ext.part" and renamed when complete
+    "last_window": {},                 # size / position / maximised state of the last closed window (new windows open like it)
     "warn_dangerous_downloads": True,
     "open_downloads_panel": True,
     # performance

@@ -29,6 +29,15 @@ class SuggestPopup(QListWidget):
         self.itemClicked.connect(lambda it: self.picked.emit(it.data(TEXT_ROLE), bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier)))
         self.itemEntered.connect(lambda it: self.setCurrentItem(it))
 
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == Qt.MouseButton.MiddleButton:          # middle-click a suggestion: open it in a new tab
+            it = self.itemAt(ev.position().toPoint())
+            if it is not None:
+                self.picked.emit(it.data(TEXT_ROLE), True)
+                ev.accept()
+                return
+        super().mouseReleaseEvent(ev)
+
     def show_for(self, widget):
         n = self.count()
         if n == 0:

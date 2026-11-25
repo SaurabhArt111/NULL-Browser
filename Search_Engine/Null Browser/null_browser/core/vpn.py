@@ -55,9 +55,27 @@ def chromium_args(data_dir):
     if s is None:
         return []
     host = s["host"] if ":" not in s["host"] else f"[{s['host']}]"
+    # DNS leak protection: with a proxy every page / sub-resource host name is resolved by the proxy, but Chromium can still
+    # ask the local resolver on the side (DNS prefetch for links, preconnect, some internal lookups). Mapping every name to
+    # "not found" - except the proxy itself and localhost - makes such side lookups impossible (the same rule Tor Browser uses).
+    exclude = ["localhost", "127.0.0.1", "[::1]"]
+    if not _is_ip(s["host"]):
+        exclude.append(s["host"])                                          # the proxy's own name must still resolve
+    rules = "MAP * ~NOTFOUND , " + " , ".join(f"EXCLUDE {h}" for h in exclude)
     return [f"--proxy-server={s['scheme']}://{host}:{int(s['port'])}",
             "--proxy-bypass-list=localhost;127.0.0.1;[::1]",                    # the local Null Search engine must stay reachable
-            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+            f"--host-resolver-rules={rules}",
+            "--disable-quic",                                                   # QUIC is UDP: it cannot go through the tunnel
+            "--dns-prefetch-disable"]
+
+
+def _is_ip(host):
+    try:
+        socket.inet_pton(socket.AF_INET6 if ":" in host else socket.AF_INET, host.strip("[]"))
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 class VpnStore:

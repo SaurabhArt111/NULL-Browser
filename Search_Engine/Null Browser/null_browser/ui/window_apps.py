@@ -116,10 +116,32 @@ class WindowAppsMixin:
         s = v.active() or {}
         m = QMenu(self)
         m.addAction(f"Connected through {s.get('name', '?')}").setEnabled(False)
+        m.addAction("DNS and WebRTC leak protection: on").setEnabled(False)
+        self._menu_item(m, "Test connection", self.test_vpn, None, "vpn")
         self._menu_item(m, "Turn VPN off (restarts the browser)", lambda: self.app.vpn_set_enabled(False), None, "power")
         self._menu_item(m, "VPN settings", lambda: self.open_url(f"{SCHEME}://settings/vpn"), None, "settings")
         m.exec(self.vpn_btn.mapToGlobal(QPoint(0, self.vpn_btn.height() + 2)))
         m.deleteLater()
+
+    def test_vpn(self):
+        """Ask the active server to open a tunnel (on a worker thread) and show the result as a toast."""
+        import threading
+        from PyQt6.QtCore import QTimer
+        from ..core.vpn import test_server
+        s = self.app.vpn.active()
+        if not s:
+            return
+        box = {}
+        threading.Thread(target=lambda: box.setdefault("r", test_server(dict(s), timeout=6.0)), daemon=True).start()
+        self.show_toast("Testing the VPN server…", 7000)
+
+        def poll(n=0):
+            if "r" in box:
+                r = box["r"]
+                self.show_toast(f"VPN works - {r['ms']} ms to open a tunnel." if r["ok"] else f"VPN problem: {r['message']}", 5000)
+            elif n < 80:
+                QTimer.singleShot(100, lambda: poll(n + 1))
+        poll()
 
     # ---- install chip ---------------------------------------------------------------------------------------------------
     def probe_installable(self, tab):

@@ -36,6 +36,8 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline';
 # null:// pages (cross-origin), so it can never learn it - this does not depend on how Chromium serialises the
 # origin of a custom scheme (which is opaque, i.e. "null").
 API_TOKEN = secrets.token_urlsafe(24)
+# Page-specific style sheets go in <head> so the page never paints unstyled first (that was the New Tab flash).
+EXTRA_HEAD = {"newtab": '<link rel="stylesheet" href="/_/newtab.css">'}
 MAX_BODY = 12_000                      # bytes: largest single API request body (bigger payloads are sent in chunks)
 FOREIGN_SCHEMES = {"http", "https", "file", "ftp", "ws", "wss", "data", "blob", "filesystem", "view-source"}
 
@@ -139,7 +141,7 @@ class NullSchemeHandler(QWebEngineUrlSchemeHandler):
         accent = s.get("accent") or "#6c5ce7"
         return (self.template().replace("{{theme}}", theme).replace("{{accent}}", accent)
                 .replace("{{accent_contrast}}", _contrast(accent)).replace("{{page}}", page).replace("{{title}}", title)
-                .replace("{{token}}", API_TOKEN))
+                .replace("{{token}}", API_TOKEN).replace("{{extra_head}}", EXTRA_HEAD.get(page, "")))
 
     def _newtab_bg(self, job):
         found = api_mod.newtab_bg_file()

@@ -14,6 +14,7 @@
   --shadow: 0 1px 2px rgba(20, 20, 40, .06), 0 6px 20px rgba(20, 20, 40, .06);
   --radius: 14px;
   --sidebar: 268px;
+  --topbar: 63px;
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
 }
 
@@ -54,27 +55,9 @@ html {
   scroll-behavior: smooth;
 }
 
-body {
-  animation: nb-page-in .22s cubic-bezier(.2, .7, .2, 1) both;
-}
-
-@keyframes nb-page-in {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
-  }
-
-  body {
-    animation: none;
   }
 }
 
@@ -127,6 +110,7 @@ svg.i.sm {
   align-items: center;
   gap: 16px;
   padding: 10px 24px;
+  height: var(--topbar);
   background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
@@ -221,16 +205,16 @@ code {
 
 .layout {
   display: flex;
-  min-height: calc(100% - 59px);
+  min-height: calc(100% - var(--topbar));
 }
 
 .sidebar {
   width: var(--sidebar);
   padding: 12px 12px 24px 16px;
   position: sticky;
-  top: 59px;
+  top: var(--topbar);
   align-self: flex-start;
-  height: calc(100vh - 59px);
+  height: calc(100vh - var(--topbar));
   overflow: auto;
   flex: none;
 }
@@ -326,6 +310,28 @@ h2 {
 .row .grow {
   flex: 1;
   min-width: 0;
+}
+
+/* a real link inside a row: middle-click / Ctrl+click opens a new tab, right-click offers "Open link in new tab" */
+.row a.rowlink {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  color: inherit;
+  text-decoration: none;
+}
+
+.row a.rowlink:hover {
+  text-decoration: none;
+}
+
+.row a.rowlink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 .row .title {

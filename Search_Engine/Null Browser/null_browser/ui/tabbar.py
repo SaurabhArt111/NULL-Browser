@@ -2,13 +2,12 @@
 import logging
 
 from PyQt6.QtCore import QEasingCurve, QElapsedTimer, QPoint, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QCursor, QFontMetrics, QPainter, QPainterPath, QPen
-from PyQt6.QtWidgets import QHBoxLayout, QMenu, QTabBar, QWidget
+from PyQt6.QtGui import QAction, QColor, QCursor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from PyQt6.QtWidgets import QAbstractButton, QHBoxLayout, QMenu, QTabBar, QWidget
 
 from . import icons
 from . import enhance
 from .tips import tip
-from .widgets import HoverToolButton
 
 log = logging.getLogger("null.tabbar")
 
@@ -53,10 +52,12 @@ class TabStrip(QTabBar):
         self._off = {}                         # tab id -> horizontal offset still to glide out (px)
         self._next_id = 1
         self._hover, self._hover_part = -1, ""
-        self._loading = set()
+        self._frozen_w = None                  # after closing a tab with the mouse, widths stay put until the pointer leaves (Chrome)
+        self._pinned_n = None                  # cached number of pinned tabs (tabSizeHint is called once per tab per layout)
+        self._fm = None
         self._frames = []
         self._frame = 0
-        self._timer = QTimer(self, interval=80)
+        self._timer = QTimer(self, interval=40)                 # 24 frames x 40 ms = one turn per second (cheap: only the icons repaint)
         self._timer.timeout.connect(self._spin)
         self._glide = QTimer(self, interval=15)
         self._glide.timeout.connect(self._glide_step)
@@ -69,7 +70,8 @@ class TabStrip(QTabBar):
         self.restyle()
 
     def restyle(self):
-        self._frames = icons.spinner_frames(self.app.accent)
+        self._frames = icons.spinner_frames(self.app.accent, steps=24)
+        self._fm = None
         self.update()
 
     # -- per-tab state (kept in tabData so it moves with the tab) -----------------------------------------------
@@ -94,20 +96,28 @@ class TabStrip(QTabBar):
         return d["id"]
 
     # -- sizing --------------------------------------------------------------------------
+    def _pinned_count(self):
+        if self._pinned_n is None:
+            self._pinned_n = sum(1 for i in range(self.count()) if self.is_pinned(i))
+        return self._pinned_n
+
     def tabSizeHint(self, index):
         h = 40
         if self.is_pinned(index):
             return QSize(self.PINNED_W, h)
         n = self.count()
-        pinned = sum(1 for i in range(n) if self.is_pinned(i))
+        pinned = self._pinned_count()
         avail = max(200, (self.parentWidget().width() if self.parentWidget() else 1000) - self.reserved) - pinned * self.PINNED_W
         unpinned = max(1, n - pinned)
         w = max(self.MIN_W, min(self.MAX_W, avail // unpinned))
+        if self._frozen_w is not None:
+            w = min(self.MAX_W, self._frozen_w)
         if index == self._grow_idx and self._grow_f < 1.0:
             w = max(10, int(w * self._grow_f))
         return QSize(w, h)
 
     def tabInserted(self, index):
+        self._pinned_n = None
         super().tabInserted(index)
         self._set_meta(index, id=self._next_id)
         self._next_id += 1
@@ -119,7 +129,9 @@ class TabStrip(QTabBar):
             self._grow.start()
 
     def tabRemoved(self, index):
+        self._pinned_n = None
         super().tabRemoved(index)
+        self._sync_spinner()
         if enhance.ENABLED:
             self._grow.stop()                                      # indexes shifted: settle immediately
         self._grow_idx, self._grow_f = -1, 1.0
@@ -145,8 +157,15 @@ class TabStrip(QTabBar):
 
     # -- state set by the window ---------------------------------------------------------------
     def decorate(self, index, pinned, audible, muted):
+        old = self._meta(index)
+        if (old.get("pinned"), old.get("audible"), old.get("muted")) == (bool(pinned), bool(audible), bool(muted)):
+            return                                                 # nothing changed: no repaint (audio signals fire often)
+        pin_changed = bool(old.get("pinned")) != bool(pinned)
         self._set_meta(index, pinned=bool(pinned), audible=bool(audible), muted=bool(muted))
-        self.update()
+        if pin_changed:
+            self._pinned_n = None
+            self.setTabText(index, self.tabText(index))           # width changes: relayout once
+        self.update(self.tabRect(index).adjusted(-self.FLARE, 0, self.FLARE, 0))
 
     # -- geometry of the parts of a tab ---------------------------------------------------------
     def _body(self, i, rect=None):
@@ -262,15 +281,20 @@ class TabStrip(QTabBar):
             p.setBrush(QColor(pal["tab_hover"]))
             p.drawPath(self._shape(body.adjusted(0, 0, 0, -1), False))
         parts = self._parts(i, body, selected, hovered)
-        ic = self.tabIcon(i)
-        if not ic.isNull():
-            ic.paint(p, parts["icon"].toRect(), Qt.AlignmentFlag.AlignCenter)
+        m = self._meta(i)
+        if m.get("loading") and self._frames:                         # spinner is painted, not set as the tab icon (no relayout per frame)
+            self._frames[self._frame % len(self._frames)].paint(p, parts["icon"].toRect(), Qt.AlignmentFlag.AlignCenter)
+        else:
+            ic = self.tabIcon(i)
+            if not ic.isNull():
+                ic.paint(p, parts["icon"].toRect(), Qt.AlignmentFlag.AlignCenter)
         if parts["text"] is not None:
             p.setPen(QColor(pal["text"] if (selected or hovered or lifted) else pal["muted"]))
             p.setFont(self.font())
-            text = QFontMetrics(self.font()).elidedText(self.tabText(i), Qt.TextElideMode.ElideRight, int(parts["text"].width()))
+            if self._fm is None:
+                self._fm = QFontMetrics(self.font())
+            text = self._fm.elidedText(self.tabText(i), Qt.TextElideMode.ElideRight, int(parts["text"].width()))
             p.drawText(parts["text"], int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), text)
-        m = self._meta(i)
         for name, icon_name in (("audio", "mute" if m.get("muted") else "volume"), ("close", "close")):
             rr = parts[name]
             if rr is None:
@@ -289,25 +313,57 @@ class TabStrip(QTabBar):
 
     def leaveEvent(self, ev):
         self._set_hover(-1, "")
+        self._unfreeze()
         super().leaveEvent(ev)
 
+    def _freeze_widths(self, i):
+        """Closing tabs one after another with the mouse: keep the remaining tabs' width so the next close button slides
+        under the pointer instead of the strip re-flowing (Chrome). Released when the pointer leaves the strip."""
+        if 0 <= i < self.count() and not self.is_pinned(i) and i < self.count() - 1:
+            self._frozen_w = self.tabRect(i).width()
+
+    def _unfreeze(self):
+        if self._frozen_w is not None:
+            self._frozen_w = None
+            if self.count():
+                self.setTabText(0, self.tabText(0))          # re-layout once with the normal widths
+
     # -- loading spinner ---------------------------------------------------------------------------
+    # The loading state lives in tabData, so it follows the tab when tabs are moved, dragged or closed.
     def set_loading(self, index, loading):
-        (self._loading.add if loading else self._loading.discard)(index)
-        if self._loading and not self._timer.isActive():
-            self._timer.start()
-        elif not self._loading:
-            self._timer.stop()
+        if not (0 <= index < self.count()) or bool(self._meta(index).get("loading")) == bool(loading):
+            return
+        self._set_meta(index, loading=bool(loading))
+        self.update(self.tabRect(index))
+        self._sync_spinner()
 
     def clear_loading(self):
-        self._loading.clear()
-        self._timer.stop()
+        for i in range(self.count()):
+            if self._meta(i).get("loading"):
+                self._set_meta(i, loading=False)
+        self._sync_spinner()
+
+    def _loading_indexes(self):
+        return [i for i in range(self.count()) if self._meta(i).get("loading")]
+
+    def _sync_spinner(self):
+        busy = bool(self._loading_indexes())
+        if busy and not self._timer.isActive():
+            self._timer.start()
+        elif not busy and self._timer.isActive():
+            self._timer.stop()
 
     def _spin(self):
+        if not self._frames:
+            return
         self._frame = (self._frame + 1) % len(self._frames)
-        for i in list(self._loading):
-            if 0 <= i < self.count():
-                self.setTabIcon(i, self._frames[self._frame])
+        idx = self._loading_indexes()
+        if not idx:
+            self._timer.stop()
+            return
+        for i in idx:                                               # repaint only the icons that spin
+            r = self._draw_rect(i)
+            self.update(int(r.left()) + 8, 0, 28, self.height())
 
     # -- dragging (reorder inside the strip) --------------------------------------------------------------
     def _group_bounds(self, i):
@@ -383,7 +439,7 @@ class TabStrip(QTabBar):
         pos = ev.position().toPoint()
         i = self.tabAt(pos)
         if i < 0:
-            ev.ignore()                                    # empty strip area drags the window
+            ev.ignore()                                    # empty strip area drags the window / middle-click opens a tab
             return
         b = ev.button()
         if b == Qt.MouseButton.LeftButton:
@@ -446,8 +502,10 @@ class TabStrip(QTabBar):
             kind, i = pending
             if self.tabAt(pos) == i and 0 <= i < self.count():
                 if kind == "middle" and ev.button() == Qt.MouseButton.MiddleButton:
+                    self._freeze_widths(i)
                     self.closeRequested.emit(i)
                 elif kind == "close" and self._hit(i, pos) == "close":
+                    self._freeze_widths(i)
                     self.closeRequested.emit(i)
                 elif kind == "audio" and self._hit(i, pos) == "audio":
                     self.audioToggled.emit(i)
@@ -479,7 +537,7 @@ class TabStrip(QTabBar):
             add("Close tab", "close", "close")
             add("Close other tabs", "close_others", None, self.count() > 1)
             add("Close tabs to the right", "close_right", None, i < self.count() - 1)
-        add("Reopen closed tab", "reopen", "history", bool(self.app.closed_tabs))
+        add("Reopen closed tab", "reopen", "history", bool(getattr(self.app.app, "closed", None)))
         m.exec(self.mapToGlobal(pos))
         m.deleteLater()
 
@@ -505,6 +563,9 @@ class TitleStrip(QWidget):
 
     # -- dragging the window by the empty part of the strip ------------------------------------------
     def mousePressEvent(self, ev):
+        if ev.button() == Qt.MouseButton.MiddleButton:
+            ev.accept()                                    # handled on release
+            return
         if ev.button() == Qt.MouseButton.LeftButton:
             if self.win.isMaximized() or self.win.isFullScreen():
                 self._manual = None
@@ -528,6 +589,10 @@ class TitleStrip(QWidget):
 
     def mouseReleaseEvent(self, ev):
         self._manual = None
+        if ev.button() == Qt.MouseButton.MiddleButton and self.rect().contains(ev.position().toPoint()):
+            self.win.new_tab()                             # middle-click on empty tab-strip space: new tab
+            ev.accept()
+            return
         super().mouseReleaseEvent(ev)
 
     def mouseDoubleClickEvent(self, ev):
@@ -539,8 +604,126 @@ class TitleStrip(QWidget):
         super().mouseDoubleClickEvent(ev)
 
 
+class CaptionButton(QAbstractButton):
+    """A Windows-11-style caption button (minimise / maximise / restore / close).
+
+    The glyph is the system's own (Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on Windows 10) so it is pixel-identical
+    to every other window; elsewhere a crisp 10 px vector glyph aligned to device pixels is drawn instead. Hover fades in /
+    out like Windows does, close turns red with a white glyph, and the glyph dims while the window is inactive."""
+    GLYPHS = {"minimize": "\ue921", "maximize": "\ue922", "restore": "\ue923", "close": "\ue8bb"}
+    W, H = 46, 32                                         # Windows 11 caption button size (logical px)
+    _font_family = None
+
+    def __init__(self, kind, win, parent=None):
+        super().__init__(parent)
+        self.kind, self.win = kind, win
+        self._t = 0.0
+        self._forced = False
+        self.setFixedSize(self.W, self.H)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self._anim = QVariantAnimation(self, duration=110, easingCurve=QEasingCurve.Type.OutCubic)
+        self._anim.valueChanged.connect(lambda v: (setattr(self, "_t", float(v)), self.update()))
+
+    @classmethod
+    def font_family(cls):
+        if cls._font_family is None:
+            from PyQt6.QtGui import QFontDatabase
+            fams = set(QFontDatabase.families())
+            cls._font_family = next((f for f in ("Segoe Fluent Icons", "Segoe MDL2 Assets") if f in fams), "")
+        return cls._font_family
+
+    def set_kind(self, kind):
+        if kind != self.kind:
+            self.kind = kind
+            self.update()
+
+    def _go(self, target):
+        if not enhance.ENABLED:
+            self._t = float(target)
+            self.update()
+            return
+        self._anim.stop()
+        self._anim.setStartValue(self._t)
+        self._anim.setEndValue(float(target))
+        self._anim.setDuration(90 if target else 160)
+        self._anim.start()
+
+    def set_forced(self, on):
+        """Keep the hover look while Windows owns the mouse (the maximise button's Snap Layouts area)."""
+        self._forced = bool(on)
+        self._go(1 if (self._forced or self.underMouse()) else 0)
+
+    def enterEvent(self, ev):
+        self._go(1)
+        super().enterEvent(ev)
+
+    def leaveEvent(self, ev):
+        if not self._forced:
+            self._go(0)
+        super().leaveEvent(ev)
+
+    def sizeHint(self):
+        return QSize(self.W, self.H)
+
+    def paintEvent(self, ev):
+        pal = self.win.pal
+        dark = bool(pal.get("dark"))
+        close = self.kind == "close"
+        down = self.isDown()
+        p = QPainter(self)
+        if self._t > 0.001 or down:
+            if close:
+                bg = QColor("#c42b1c") if not down else QColor(200, 64, 50)
+            else:
+                bg = QColor(255, 255, 255, 18 if not down else 11) if dark else QColor(0, 0, 0, 15 if not down else 9)
+            if not down:
+                bg.setAlphaF(bg.alphaF() * self._t)
+            p.fillRect(self.rect(), bg)
+        fg = QColor(pal["text"])
+        if close and (self._t > 0.5 or down):
+            fg = QColor("#ffffff")
+        elif not self.window().isActiveWindow():
+            fg.setAlphaF(0.45)                                # Windows dims caption glyphs of inactive windows
+        fam = self.font_family()
+        if fam:
+            f = QFont(fam)
+            f.setPixelSize(10)
+            p.setFont(f)
+            p.setPen(fg)
+            p.drawText(self.rect(), int(Qt.AlignmentFlag.AlignCenter), self.GLYPHS[self.kind])
+        else:
+            self._draw_vector(p, fg)
+        p.end()
+
+    def _draw_vector(self, p, fg):
+        dpr = self.devicePixelRatioF()
+        px = 1.0 / dpr                                        # one device pixel
+        pen = QPen(fg, max(1.0, round(dpr)) / dpr)
+        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        cx, cy, s = self.width() / 2, self.height() / 2, 10.0
+        snap = lambda v: round(v * dpr) / dpr + px / 2        # centre a 1-device-pixel line on a pixel
+        x0, y0 = snap(cx - s / 2), snap(cy - s / 2)
+        if self.kind == "minimize":
+            p.drawLine(QPointF(x0, snap(cy)), QPointF(x0 + s, snap(cy)))
+        elif self.kind == "maximize":
+            p.drawRect(QRectF(x0, y0, s - px, s - px))
+        elif self.kind == "restore":
+            o = 2.0
+            p.drawRect(QRectF(x0, y0 + o, s - o - px, s - o - px))
+            p.drawPolyline([QPointF(x0 + o, y0 + o), QPointF(x0 + o, y0), QPointF(x0 + s - px, y0),
+                            QPointF(x0 + s - px, y0 + s - o - px), QPointF(x0 + s - o - px, y0 + s - o - px)])
+        else:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.drawLine(QPointF(cx - s / 2, cy - s / 2), QPointF(cx + s / 2, cy + s / 2))
+            p.drawLine(QPointF(cx + s / 2, cy - s / 2), QPointF(cx - s / 2, cy + s / 2))
+
+
 class WindowControls(QWidget):
-    """[ - ][ □ ][ x ] flush with the right edge, drawn with our own icons (works on every OS)."""
+    """[ - ][ □ ][ x ] flush with the top-right corner, sized and drawn like Windows 11's own caption buttons."""
 
     def __init__(self, win):
         super().__init__()
@@ -549,22 +732,18 @@ class WindowControls(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        colors = lambda: (win.pal["hover"], win.pal["press"])
-        self.min_btn = HoverToolButton(colors, radius=0)
-        self.max_btn = HoverToolButton(colors, radius=0)
-        self.close_btn = HoverToolButton(lambda: ("#e81123", "#f1707a"), radius=0)
+        self.min_btn = CaptionButton("minimize", win)
+        self.max_btn = CaptionButton("maximize", win)
+        self.close_btn = CaptionButton("close", win)
         self._poll = QTimer(self, interval=40)                  # clears the hot look once Windows stops reporting the mouse
         self._poll.timeout.connect(self._poll_max)
         for b, name, fn in ((self.min_btn, "wc_min", win.showMinimized), (self.max_btn, "wc_max", win.toggle_maximized),
                             (self.close_btn, "wc_close", win.close)):
             b.setObjectName(name)
-            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            b.setFixedSize(46, 36)
-            b.setIconSize(QSize(14, 14))
             b.clicked.connect(lambda _=False, f=fn: f())
             lay.addWidget(b)
         tip(self.min_btn, "Minimize", "Send this window to the taskbar")
-        tip(self.close_btn, "Close window", "Close every tab in this window", "Alt+F4")
+        tip(self.close_btn, "Close", "Close every tab in this window", "Alt+F4")
         self.refresh()
 
     def set_max_state(self, hot=None, pressed=None):
@@ -585,18 +764,15 @@ class WindowControls(QWidget):
             b.setDown(False)
             b.set_forced(False)
 
-    def refresh(self):
-        w, ic = self.win, self.win.icon
-        maxed = w.isMaximized()
-        self.min_btn.setIcon(self._hover_icon("minimize"))
-        self.max_btn.setIcon(self._hover_icon("restore" if maxed else "maximize"))
-        self.close_btn.setIcon(self._hover_icon("close", hover="#ffffff"))
-        tip(self.max_btn, "Restore down" if maxed else "Maximize", "Return the window to its previous size" if maxed else "Fill the whole screen", "Double-click the title bar")
+    def changeEvent(self, ev):
+        super().changeEvent(ev)
+        if ev.type() == ev.Type.ActivationChange:
+            for b in (self.min_btn, self.max_btn, self.close_btn):
+                b.update()
 
-    def _hover_icon(self, name, hover=None):
-        win = self.win
-        color = win.pal["text"]
-        ic = icons.icon(name, color, 14)
-        if hover:
-            ic.addPixmap(icons.pixmap(name, hover, 14), icons.QIcon.Mode.Active)
-        return ic
+    def refresh(self):
+        maxed = self.win.isMaximized()
+        self.max_btn.set_kind("restore" if maxed else "maximize")
+        for b in (self.min_btn, self.max_btn, self.close_btn):
+            b.update()
+        tip(self.max_btn, "Restore down" if maxed else "Maximize", "Return the window to its previous size" if maxed else "Fill the whole screen", "Double-click the title bar")

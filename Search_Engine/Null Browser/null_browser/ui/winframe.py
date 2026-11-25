@@ -32,6 +32,7 @@ IS_WIN = sys.platform.startswith("win")
 WM_NCCALCSIZE, WM_NCHITTEST, WM_NCMOUSEMOVE = 0x0083, 0x0084, 0x00A0
 WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE = 0x00A1, 0x00A2, 0x02A2
 WM_ERASEBKGND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE = 0x0014, 0x0231, 0x0232
+WM_NCMBUTTONDOWN, WM_NCMBUTTONUP = 0x00A7, 0x00A8
 # hit-test results
 HTCLIENT, HTCAPTION, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT = 1, 2, 10, 11, 12, 13, 14
 HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTMAXBUTTON = 15, 16, 17, 9
@@ -92,7 +93,7 @@ class _Filter(QAbstractNativeEventFilter):
     created, so no Python runs for a window until `install()` has registered it, after the window exists.)
     """
     HANDLED = frozenset((WM_NCCALCSIZE, WM_NCHITTEST, WM_NCMOUSEMOVE, WM_NCMOUSELEAVE, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
-                         WM_ERASEBKGND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE))
+                         WM_ERASEBKGND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCMBUTTONDOWN, WM_NCMBUTTONUP))
 
     def __init__(self):
         super().__init__()
@@ -248,6 +249,13 @@ def native_event(win, m):
             win.wc.set_max_state(hot=False, pressed=False)
         elif code == WM_NCLBUTTONDOWN and m.wParam == HTMAXBUTTON:
             win.wc.set_max_state(hot=True, pressed=True)
+            return True, 0
+        elif code == WM_NCMBUTTONDOWN and m.wParam == HTCAPTION:
+            return True, 0
+        elif code == WM_NCMBUTTONUP and m.wParam == HTCAPTION:
+            # empty tab-strip space is "caption" for Windows, so Qt never sees this middle-click: open a new tab here
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: win.new_tab())
             return True, 0
         elif code == WM_NCLBUTTONUP and m.wParam == HTMAXBUTTON:
             win.wc.set_max_state(hot=False, pressed=False)

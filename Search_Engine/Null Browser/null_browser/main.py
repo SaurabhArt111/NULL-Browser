@@ -111,7 +111,7 @@ def main(argv=None):
     from .engine import flags as chromium_flags
     chromium_flags.apply(os.path.join(paths.data_dir(), "settings.json"), args.safe_mode, enhance.ENABLED, args.debug)
 
-    sys.setswitchinterval(0.001)                            # the ad-block interceptor runs Python on Chromium's IO thread: hand the GIL over quickly
+    sys.setswitchinterval(0.003)                            # ad-block interceptor runs on Chromium's IO thread; 1 ms made the UI thread hand the GIL over constantly (lag)
     from .web.scheme import register_scheme
     register_scheme()                                       # must precede QApplication
 
